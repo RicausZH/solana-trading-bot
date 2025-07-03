@@ -87,7 +87,7 @@ class FraudDetector:
     async def _quillcheck_analysis(self, token_address: str) -> Dict:
         """Free QuillCheck API analysis"""
         try:
-            url = f"{self.config.QUILLCHECK_API_URL}/scan/{token_address}"
+            url = f"{self.config.QUILLCHECK_API}/scan/{token_address}"
             
             async with self.session.get(url, timeout=10) as response:
                 if response.status == 200:

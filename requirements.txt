@@ -1,14 +1,9 @@
-# Core Solana and Jupiter dependencies
+# requirements.txt - CORRECTED VERSION
 jupiter-python-sdk==0.0.2.0
 solana==0.30.2
 solders==0.21.0
 anchorpy==0.19.1
-
-# HTTP and async support
 aiohttp==3.9.1
 asyncio-throttle==1.0.2
-
-# Utilities
 python-dotenv==1.0.0
 base58==2.1.1
-base64

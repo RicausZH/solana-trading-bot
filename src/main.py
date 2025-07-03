@@ -1,177 +1,205 @@
 import asyncio
-import logging
-import sys
-from typing import Optional
+import os
+import base58
+import base64
+import json
+from dotenv import load_dotenv
+
+from solders import message
+from solders.pubkey import Pubkey
+from solders.keypair import Keypair
+from solders.transaction import VersionedTransaction
+
+from solana.rpc.types import TxOpts
+from solana.rpc.async_api import AsyncClient
+from solana.rpc.commitment import Processed
+
+from jupiter_python_sdk.jupiter import Jupiter
+
 from config import Config
 from token_scanner import TokenScanner
-from fraud_detector import FraudDetector
-from jupiter_trader import JupiterTrader
-from position_monitor import PositionMonitor
+from contract_analyzer import ContractAnalyzer
+from monitor import PositionMonitor
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('trading_bot.log')
-    ]
-)
-
-logger = logging.getLogger(__name__)
+load_dotenv()
 
 class SolanaTradingBot:
     def __init__(self):
         self.config = Config()
-        self.running = False
-        self.scanner: Optional[TokenScanner] = None
-        self.fraud_detector: Optional[FraudDetector] = None
-        self.trader: Optional[JupiterTrader] = None
-        self.monitor: Optional[PositionMonitor] = None
+        self.validate_config()
         
+        # Initialize Solana client
+        self.solana_client = AsyncClient(self.config.SOLANA_RPC_URL)
+        
+        # Initialize wallet
+        self.private_key = Keypair.from_bytes(base58.b58decode(self.config.SOLANA_PRIVATE_KEY))
+        
+        # Initialize Jupiter
+        self.jupiter = Jupiter(
+            async_client=self.solana_client,
+            keypair=self.private_key,
+            quote_api_url="https://quote-api.jup.ag/v6/quote?",
+            swap_api_url="https://quote-api.jup.ag/v6/swap"
+        )
+        
+        # Initialize components
+        self.token_scanner = TokenScanner(self.config)
+        self.contract_analyzer = ContractAnalyzer(self.config)
+        self.position_monitor = PositionMonitor(self.config, self.jupiter)
+        
+        # Trading state
+        self.active_positions = {}
+        self.available_capital = float(self.config.TRADE_AMOUNT) * float(self.config.MAX_POSITIONS)
+        
+        print(f"🚀 Solana Trading Bot initialized")
+        print(f"💰 Wallet: {self.private_key.pubkey()}")
+        print(f"💵 Available capital: ${self.available_capital}")
+
+    def validate_config(self):
+        """Validate all required configuration is present"""
+        required_vars = [
+            'SOLANA_PRIVATE_KEY', 'SOLANA_PUBLIC_KEY', 'SOLANA_RPC_URL',
+            'TRADE_AMOUNT', 'PROFIT_TARGET', 'MAX_POSITIONS'
+        ]
+        
+        for var in required_vars:
+            if not hasattr(self.config, var) or not getattr(self.config, var):
+                raise ValueError(f"Missing required environment variable: {var}")
+
+    async def execute_trade(self, token_address: str, amount_usdc: float):
+        """Execute a real Jupiter swap"""
+        try:
+            print(f"🔄 Executing trade: ${amount_usdc} USDC → {token_address}")
+            
+            # Convert amount to lamports (USDC has 6 decimals)
+            amount_lamports = int(amount_usdc * 1_000_000)
+            
+            # Execute swap via Jupiter
+            transaction_data = await self.jupiter.swap(
+                input_mint=self.config.USDC_MINT,  # USDC
+                output_mint=token_address,
+                amount=amount_lamports,
+                slippage_bps=int(self.config.SLIPPAGE_BPS)
+            )
+            
+            # Sign and send transaction
+            raw_transaction = VersionedTransaction.from_bytes(base64.b64decode(transaction_data))
+            signature = self.private_key.sign_message(message.to_bytes_versioned(raw_transaction.message))
+            signed_txn = VersionedTransaction.populate(raw_transaction.message, [signature])
+            
+            opts = TxOpts(skip_preflight=False, preflight_commitment=Processed)
+            result = await self.solana_client.send_raw_transaction(txn=bytes(signed_txn), opts=opts)
+            transaction_id = json.loads(result.to_json())['result']
+            
+            print(f"✅ Trade executed: https://explorer.solana.com/tx/{transaction_id}")
+            
+            return {
+                'success': True,
+                'transaction_id': transaction_id,
+                'token_address': token_address,
+                'amount_usdc': amount_usdc
+            }
+            
+        except Exception as e:
+            print(f"❌ Trade execution failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+    async def sell_position(self, token_address: str, token_amount: float):
+        """Sell a position back to USDC"""
+        try:
+            print(f"💸 Selling position: {token_amount} {token_address} → USDC")
+            
+            # Get token decimals and convert amount
+            # Most tokens use 9 decimals, but should be fetched dynamically
+            amount_lamports = int(token_amount * 1_000_000_000)
+            
+            # Execute sell via Jupiter
+            transaction_data = await self.jupiter.swap(
+                input_mint=token_address,
+                output_mint=self.config.USDC_MINT,  # USDC
+                amount=amount_lamports,
+                slippage_bps=int(self.config.SLIPPAGE_BPS)
+            )
+            
+            # Sign and send transaction
+            raw_transaction = VersionedTransaction.from_bytes(base64.b64decode(transaction_data))
+            signature = self.private_key.sign_message(message.to_bytes_versioned(raw_transaction.message))
+            signed_txn = VersionedTransaction.populate(raw_transaction.message, [signature])
+            
+            opts = TxOpts(skip_preflight=False, preflight_commitment=Processed)
+            result = await self.solana_client.send_raw_transaction(txn=bytes(signed_txn), opts=opts)
+            transaction_id = json.loads(result.to_json())['result']
+            
+            print(f"✅ Position sold: https://explorer.solana.com/tx/{transaction_id}")
+            
+            return {
+                'success': True,
+                'transaction_id': transaction_id,
+                'token_address': token_address
+            }
+            
+        except Exception as e:
+            print(f"❌ Sell execution failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+    async def main_trading_loop(self):
+        """Main trading loop - 24/7 operation"""
+        print("🔄 Starting main trading loop...")
+        
+        while True:
+            try:
+                # 1. Scan for new tokens
+                new_tokens = await self.token_scanner.discover_new_tokens()
+                
+                for token_data in new_tokens:
+                    token_address = token_data['address']
+                    
+                    # 2. Analyze for fraud (15 seconds max)
+                    is_safe = await self.contract_analyzer.analyze_token(token_address)
+                    
+                    if not is_safe:
+                        print(f"⚠️  Token {token_address} failed fraud analysis - skipping")
+                        continue
+                    
+                    # 3. Check if we have available capital
+                    if len(self.active_positions) >= int(self.config.MAX_POSITIONS):
+                        print(f"📊 Maximum positions reached ({self.config.MAX_POSITIONS})")
+                        continue
+                    
+                    # 4. Execute trade
+                    trade_result = await self.execute_trade(token_address, float(self.config.TRADE_AMOUNT))
+                    
+                    if trade_result['success']:
+                        # Add to active positions
+                        self.active_positions[token_address] = {
+                            'entry_price': float(self.config.TRADE_AMOUNT),
+                            'target_price': float(self.config.TRADE_AMOUNT) * (1 + float(self.config.PROFIT_TARGET) / 100),
+                            'transaction_id': trade_result['transaction_id']
+                        }
+                        
+                        print(f"📈 Position opened: {token_address} | Target: +{self.config.PROFIT_TARGET}%")
+                
+                # 5. Monitor existing positions
+                await self.position_monitor.check_positions(self.active_positions, self.sell_position)
+                
+                # 6. Wait before next scan
+                await asyncio.sleep(10)  # 10 second intervals
+                
+            except Exception as e:
+                print(f"❌ Error in main loop: {str(e)}")
+                await asyncio.sleep(30)  # Wait longer on errors
+
     async def start(self):
         """Start the trading bot"""
         try:
-            logger.info("Starting Solana Trading Bot...")
-            
-            # Initialize components
-            self.scanner = TokenScanner(self.config)
-            self.fraud_detector = FraudDetector(self.config)
-            self.trader = JupiterTrader(self.config)
-            self.monitor = PositionMonitor(self.config, self.trader)
-            
-            # Check initial wallet balance
-            usdc_balance = await self.trader.get_wallet_balance(self.config.USDC_MINT)
-            sol_balance = await self.trader.get_wallet_balance()
-            
-            logger.info(f"Initial balances - USDC: ${usdc_balance:.2f}, SOL: {sol_balance:.4f}")
-            
-            if usdc_balance < self.config.TRADE_AMOUNT:
-                logger.error(f"Insufficient USDC balance: ${usdc_balance:.2f} < ${self.config.TRADE_AMOUNT}")
-                return
-            
-            # Start monitoring in background
-            monitor_task = asyncio.create_task(self.monitor.start_monitoring())
-            
-            # Start main trading loop
-            self.running = True
-            await self._main_trading_loop()
-            
+            await self.main_trading_loop()
         except KeyboardInterrupt:
-            logger.info("Bot stopped by user")
+            print("🛑 Bot stopped by user")
         except Exception as e:
-            logger.error(f"Fatal error: {e}")
+            print(f"💥 Fatal error: {str(e)}")
         finally:
-            await self._cleanup()
-    
-    async def _main_trading_loop(self):
-        """Main trading loop"""
-        logger.info("Starting main trading loop...")
-        
-        async with self.scanner, self.fraud_detector:
-            while self.running:
-                try:
-                    # Check if we can make new trades
-                    if len(self.trader.active_positions) >= self.config.MAX_POSITIONS:
-                        logger.info(f"Max positions ({self.config.MAX_POSITIONS}) reached, waiting...")
-                        await asyncio.sleep(30)
-                        continue
-                    
-                    # Check wallet balance
-                    usdc_balance = await self.trader.get_wallet_balance(self.config.USDC_MINT)
-                    if usdc_balance < self.config.TRADE_AMOUNT:
-                        logger.warning(f"Insufficient balance for new trades: ${usdc_balance:.2f}")
-                        await asyncio.sleep(60)
-                        continue
-                    
-                    # Discover new tokens
-                    logger.info("Scanning for new tokens...")
-                    new_tokens = await self.scanner.scan_new_tokens()
-                    
-                    if not new_tokens:
-                        logger.info("No new tokens found, waiting...")
-                        await asyncio.sleep(30)
-                        continue
-                    
-                    # Analyze each token
-                    for token_info in new_tokens[:5]:  # Limit to 5 tokens per cycle
-                        if not self.running:
-                            break
-                            
-                        await self._analyze_and_trade_token(token_info)
-                        await asyncio.sleep(2)  # Brief pause between analyses
-                    
-                    # Wait before next scan
-                    await asyncio.sleep(20)
-                    
-                except Exception as e:
-                    logger.error(f"Error in main trading loop: {e}")
-                    await asyncio.sleep(60)
-    
-    async def _analyze_and_trade_token(self, token_info: Dict):
-        """Analyze a token and execute trade if safe"""
-        token_address = token_info['address']
-        
-        try:
-            logger.info(f"Analyzing token: {token_address}")
-            
-            # Skip if already trading this token
-            if token_address in self.trader.active_positions:
-                return
-            
-            # Fraud detection analysis
-            start_time = asyncio.get_event_loop().time()
-            is_safe, analysis = await self.fraud_detector.analyze_token_safety(token_address)
-            analysis_time = asyncio.get_event_loop().time() - start_time
-            
-            logger.info(f"Fraud analysis completed in {analysis_time:.1f}s - Safe: {is_safe}")
-            
-            if not is_safe:
-                logger.info(f"Token {token_address} failed safety check - skipping")
-                return
-            
-            # Execute trade
-            logger.info(f"Executing trade for safe token: {token_address}")
-            success, trade_info = await self.trader.execute_trade(token_address, self.config.TRADE_AMOUNT)
-            
-            if success:
-                logger.info(f"Trade executed successfully: {trade_info['transaction_id']}")
-                logger.info(f"Active positions: {len(self.trader.active_positions)}")
-            else:
-                logger.warning(f"Trade execution failed: {trade_info.get('error', 'Unknown error')}")
-                
-        except Exception as e:
-            logger.error(f"Error analyzing/trading token {token_address}: {e}")
-    
-    async def _cleanup(self):
-        """Cleanup resources"""
-        logger.info("Cleaning up...")
-        self.running = False
-        
-        if self.monitor:
-            self.monitor.stop_monitoring()
-    
-    def stop(self):
-        """Stop the bot"""
-        self.running = False
-
-async def main():
-    """Main entry point"""
-    bot = SolanaTradingBot()
-    
-    try:
-        await bot.start()
-    except KeyboardInterrupt:
-        logger.info("Received interrupt signal")
-    finally:
-        bot.stop()
+            await self.solana_client.close()
 
 if __name__ == "__main__":
-    # Use uvloop for better performance if available
-    try:
-        import uvloop
-        uvloop.install()
-    except ImportError:
-        pass
-    
-    asyncio.run(main())
+    bot = SolanaTradingBot()
+    asyncio.run(bot.start())

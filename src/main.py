@@ -146,6 +146,11 @@ class SolanaTradingBot:
     async def check_token_safety(self, token_address: str) -> Tuple[bool, float]:
         """Check if token is safe using multiple methods"""
         try:
+            # FORCE SOL TO BE SAFE (temporary for testing)
+            if token_address == self.sol_mint:
+                logger.info(f"🔒 Safety Analysis: {token_address[:8]}... → 1.00 (SAFE)")
+                return True, 1.0
+        
             # Method 1: QuillCheck API (free)
             safety_score = await self._quillcheck_analysis(token_address)
         
@@ -157,16 +162,14 @@ class SolanaTradingBot:
         
             # Combine scores (weighted average)
             combined_score = (safety_score * 0.5 + pattern_score * 0.3 + rpc_score * 0.2)
-        
-            # FORCE SOL TO BE SAFE (temporary for testing)
-            if token_address == self.sol_mint:
-                is_safe = True
-                combined_score = 1.0
-            else:
-                is_safe = combined_score >= 0.60
+            is_safe = combined_score >= 0.60  # 60% confidence threshold
         
             logger.info(f"🔒 Safety Analysis: {token_address[:8]}... → {combined_score:.2f} ({'SAFE' if is_safe else 'RISKY'})")
             return is_safe, combined_score
+        
+    except Exception as e:
+        logger.error(f"❌ Error in safety check: {e}")
+        return False, 0.0
         
     except Exception as e:
         logger.error(f"❌ Error in safety check: {e}")

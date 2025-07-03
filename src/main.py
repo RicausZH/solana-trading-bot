@@ -193,9 +193,9 @@ class SolanaTradingBot:
         """Basic pattern analysis"""
         # Simple heuristics
         score = 0.8
-        
+    
         # Whitelist SOL as 100% safe
-    if token_address == self.sol_mint:
+        if token_address == self.sol_mint:
         return 1.0  # SOL is always safe
     
     # Check for suspicious patterns in address
@@ -203,6 +203,7 @@ class SolanaTradingBot:
         score += 0.1  # System tokens are usually safe
     
     return min(score, 1.0)
+
     
     async def _rpc_analysis(self, token_address: str) -> float:
         """RPC-based token analysis"""

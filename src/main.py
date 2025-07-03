@@ -37,8 +37,8 @@ class SolanaTradingBot:
         self.quicknode_http = os.getenv("QUICKNODE_HTTP_URL")
         self.quicknode_wss = os.getenv("QUICKNODE_WSS_URL")
         
-        # Trading configuration
-        self.trade_amount = int(os.getenv("TRADE_AMOUNT", "3.5")) * 1_000_000  # Convert to micro-units
+        # Trading configuration - FIXED for decimal amounts
+        self.trade_amount = int(float(os.getenv("TRADE_AMOUNT", "3.5")) * 1_000_000)
         self.profit_target = float(os.getenv("PROFIT_TARGET", "2.5"))
         self.max_positions = int(os.getenv("MAX_POSITIONS", "4"))
         self.slippage = int(os.getenv("SLIPPAGE_BPS", "50"))
@@ -146,34 +146,30 @@ class SolanaTradingBot:
     async def check_token_safety(self, token_address: str) -> Tuple[bool, float]:
         """Check if token is safe using multiple methods"""
         try:
-            # FORCE SOL TO BE SAFE (temporary for testing)
+            # FORCE SOL TO BE SAFE (for testing)
             if token_address == self.sol_mint:
                 logger.info(f"🔒 Safety Analysis: {token_address[:8]}... → 1.00 (SAFE)")
                 return True, 1.0
-        
+            
             # Method 1: QuillCheck API (free)
             safety_score = await self._quillcheck_analysis(token_address)
-        
+            
             # Method 2: Basic pattern recognition
             pattern_score = await self._pattern_analysis(token_address)
-        
+            
             # Method 3: RPC-based checks
             rpc_score = await self._rpc_analysis(token_address)
-        
+            
             # Combine scores (weighted average)
             combined_score = (safety_score * 0.5 + pattern_score * 0.3 + rpc_score * 0.2)
             is_safe = combined_score >= 0.60  # 60% confidence threshold
-        
+            
             logger.info(f"🔒 Safety Analysis: {token_address[:8]}... → {combined_score:.2f} ({'SAFE' if is_safe else 'RISKY'})")
             return is_safe, combined_score
-        
-    except Exception as e:
-        logger.error(f"❌ Error in safety check: {e}")
-        return False, 0.0
-        
-    except Exception as e:
-        logger.error(f"❌ Error in safety check: {e}")
-        return False, 0.0
+            
+        except Exception as e:
+            logger.error(f"❌ Error in safety check: {e}")
+            return False, 0.0
     
     async def _quillcheck_analysis(self, token_address: str) -> float:
         """Analyze token using QuillCheck API"""
@@ -202,17 +198,12 @@ class SolanaTradingBot:
         """Basic pattern analysis"""
         # Simple heuristics
         score = 0.8
-    
-        # Whitelist SOL as 100% safe
-        if token_address == self.sol_mint:
-            return 1.0  # SOL is always safe
-    
+        
         # Check for suspicious patterns in address
         if "1111111111111111111111111" in token_address:
             score += 0.1  # System tokens are usually safe
-    
+        
         return min(score, 1.0)
-
     
     async def _rpc_analysis(self, token_address: str) -> float:
         """RPC-based token analysis"""
@@ -275,10 +266,8 @@ class SolanaTradingBot:
     
     async def _public_token_discovery(self) -> List[str]:
         """Discover tokens using public methods"""
-        # For demo purposes, return some safe tokens for testing
-        return [
-            self.sol_mint,  # SOL is always safe for testing
-        ]
+        # For demo purposes, return SOL for testing
+        return [self.sol_mint]
     
     async def monitor_positions(self):
         """Monitor active positions for profit targets"""

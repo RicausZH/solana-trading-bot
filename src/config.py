@@ -28,5 +28,5 @@ class Config:
     JUPITER_SWAP_API = os.getenv('JUPITER_SWAP_API', 'https://quote-api.jup.ag/v6/swap')
     
     # Free Fraud Detection APIs
-    QUILLCHECK_API = os.getenv('QUILLCHECK_API', 'https://api.quillai.network/')
+    QUILLCHECK_API = os.getenv('QUILLCHECK_API', 'https://check.quillai.network/api/v1')
     GOPLUS_API = os.getenv('GOPLUS_API', 'https://api.gopluslabs.io/')

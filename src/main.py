@@ -38,7 +38,7 @@ class SolanaTradingBot:
         self.quicknode_wss = os.getenv("QUICKNODE_WSS_URL")
         
         # Trading configuration
-        self.trade_amount = int(os.getenv("TRADE_AMOUNT", "35")) * 1_000_000  # Convert to micro-units
+        self.trade_amount = int(os.getenv("TRADE_AMOUNT", "3.5")) * 1_000_000  # Convert to micro-units
         self.profit_target = float(os.getenv("PROFIT_TARGET", "2.5"))
         self.max_positions = int(os.getenv("MAX_POSITIONS", "4"))
         self.slippage = int(os.getenv("SLIPPAGE_BPS", "50"))

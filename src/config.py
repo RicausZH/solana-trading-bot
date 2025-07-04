@@ -27,17 +27,18 @@ class Config:
     JUPITER_QUOTE_API = os.getenv('JUPITER_QUOTE_API', 'https://quote-api.jup.ag/v6/quote')
     JUPITER_SWAP_API = os.getenv('JUPITER_SWAP_API', 'https://quote-api.jup.ag/v6/swap')
     
-    # Security Analysis APIs (Alternatives to QuillAI)
-    RUGCHECK_API = os.getenv('RUGCHECK_API', 'https://api.rugcheck.xyz/v1/tokens/sol')
+    # Working Security APIs (Broken APIs Removed)
+    DEXTOOLS_API_KEY = os.getenv('DEXTOOLS_API_KEY', '')
+    DEXTOOLS_API_BASE = os.getenv('DEXTOOLS_API_BASE', 'https://public-api.dextools.io/standard/v2')
     DEXSCREENER_API = os.getenv('DEXSCREENER_API', 'https://api.dexscreener.com/latest/dex/tokens')
-    BIRDEYE_API = os.getenv('BIRDEYE_API', 'https://public-api.birdeye.so/defi/token_security')
-    GOPLUS_API = os.getenv('GOPLUS_API', 'https://api.gopluslabs.io')
     
-    # Optional API Keys (for higher limits)
-    BIRDEYE_API_KEY = os.getenv('BIRDEYE_API_KEY', '')
-    RUGCHECK_API_KEY = os.getenv('RUGCHECK_API_KEY', '')
+    # Safety Thresholds (Optimized)
+    SAFETY_THRESHOLD = float(os.getenv('SAFETY_THRESHOLD', '0.60'))
+    MIN_LIQUIDITY_USD = float(os.getenv('MIN_LIQUIDITY_USD', '1500'))
+    MIN_VOLUME_24H = float(os.getenv('MIN_VOLUME_24H', '300'))
     
-    # Safety Thresholds
-    SAFETY_THRESHOLD = float(os.getenv('SAFETY_THRESHOLD', '0.55'))  # Lowered from 0.65
-    MIN_LIQUIDITY_USD = float(os.getenv('MIN_LIQUIDITY_USD', '5000'))  # $5K minimum
-    MIN_VOLUME_24H = float(os.getenv('MIN_VOLUME_24H', '1000'))  # $1K minimum daily volume
+    # API Weights (Optimized for working APIs)
+    DEXTOOLS_WEIGHT = 0.45      # Premium API gets highest weight
+    DEXSCREENER_WEIGHT = 0.30   # Excellent market data
+    RPC_WEIGHT = 0.20           # On-chain analysis
+    PATTERN_WEIGHT = 0.05       # Basic validation

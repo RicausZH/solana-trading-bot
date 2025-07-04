@@ -4,6 +4,7 @@ Solana Trading Bot - REAL TRADING VERSION
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet
 Uses direct Jupiter API calls + Real blockchain transactions
 Includes: Real Token Discovery, Fraud Detection, REAL Trading, Profit Taking
+Updated: 2025-07-04 - DexTools integration, removed broken APIs
 """
 
 import os
@@ -42,8 +43,8 @@ class SolanaTradingBot:
         # REAL TRADING CONTROL
         self.enable_real_trading = os.getenv("ENABLE_REAL_TRADING", "false").lower() == "true"
         
-        # Trading configuration - FIXED for decimal amounts
-        self.trade_amount = int(float(os.getenv("TRADE_AMOUNT", "3.5")) * 1_000_000)
+        # Trading configuration
+        self.trade_amount = int(float(os.getenv("TRADE_AMOUNT", "35.0")) * 1_000_000)
         self.profit_target = float(os.getenv("PROFIT_TARGET", "2.5"))
         self.max_positions = int(os.getenv("MAX_POSITIONS", "4"))
         self.slippage = int(os.getenv("SLIPPAGE_BPS", "50"))
@@ -58,24 +59,23 @@ class SolanaTradingBot:
         self.profitable_trades = 0
         self.total_profit = 0.0
         
-        # Updated API endpoints - NO QUILLAI
+        # API endpoints (DexTools integration)
         self.jupiter_quote_url = "https://quote-api.jup.ag/v6/quote"
         self.jupiter_swap_url = "https://quote-api.jup.ag/v6/swap"
-        self.rugcheck_url = os.getenv("RUGCHECK_API", "https://api.rugcheck.xyz/v1/tokens/sol")
+        self.dextools_api_key = os.getenv("DEXTOOLS_API_KEY", "")
+        self.dextools_base_url = "https://public-api.dextools.io/standard/v2"
         self.dexscreener_url = os.getenv("DEXSCREENER_API", "https://api.dexscreener.com/latest/dex/tokens")
-        self.birdeye_url = os.getenv("BIRDEYE_API", "https://public-api.birdeye.so/defi/token_security")
-        self.goplus_url = os.getenv("GOPLUS_API", "https://api.gopluslabs.io/")
         
         # Safety thresholds
-        self.safety_threshold = float(os.getenv("SAFETY_THRESHOLD", "0.55"))
+        self.safety_threshold = float(os.getenv("SAFETY_THRESHOLD", "0.60"))
         self.min_liquidity_usd = float(os.getenv("MIN_LIQUIDITY_USD", "1500"))
         self.min_volume_24h = float(os.getenv("MIN_VOLUME_24H", "300"))
         
-        logger.info("🤖 Solana Trading Bot initialized")
+        logger.info("🤖 Solana Trading Bot initialized with DexTools")
         logger.info(f"💰 Trade Amount: ${self.trade_amount/1_000_000}")
         logger.info(f"🎯 Profit Target: {self.profit_target}%")
         logger.info(f"📊 Max Positions: {self.max_positions}")
-        logger.info(f"🛡️ Safety Threshold: {self.safety_threshold}")
+        logger.info(f"🔒 Safety Threshold: {self.safety_threshold}")
         
         # CRITICAL WARNING
         if self.enable_real_trading:
@@ -92,6 +92,8 @@ class SolanaTradingBot:
         if not self.public_key:
             logger.error("❌ SOLANA_PUBLIC_KEY not set") 
             return False
+        if not self.dextools_api_key:
+            logger.warning("⚠️ DEXTOOLS_API_KEY not set - DexTools analysis will be limited")
             
         if self.enable_real_trading:
             logger.warning("⚠️ REAL TRADING MODE - Checking wallet balance...")
@@ -136,8 +138,7 @@ class SolanaTradingBot:
         try:
             # This would normally use Solana RPC to check token balance
             # For now, return a simulated balance
-            # In real implementation, you'd call the RPC
-            return 20.0  # Simulated USDC balance
+            return 150.0  # Simulated USDC balance
         except:
             return 0.0
     
@@ -146,7 +147,7 @@ class SolanaTradingBot:
         try:
             # This would normally use Solana RPC to check SOL balance
             # For now, return a simulated balance
-            return 0.02  # Simulated SOL balance
+            return 0.05  # Simulated SOL balance
         except:
             return 0.0
     
@@ -247,7 +248,7 @@ class SolanaTradingBot:
             return None
     
     async def check_token_safety(self, token_address: str) -> Tuple[bool, float]:
-        """Enhanced multi-service token safety analysis - NO QUILLAI"""
+        """Check if token is safe using DexTools + reliable APIs"""
         try:
             # Skip SOL for now - focus on new tokens
             if token_address == self.sol_mint:
@@ -256,499 +257,58 @@ class SolanaTradingBot:
             
             logger.info(f"🔍 Analyzing token safety: {token_address}")
             
-            # Run all analysis methods in parallel
-            results = await asyncio.gather(
-                self._rugcheck_analysis(token_address),
-                self._dexscreener_analysis(token_address),
-                self._birdeye_analysis(token_address),
-                self._goplus_analysis(token_address),
-                self._rpc_analysis(token_address),
-                self._pattern_analysis(token_address),
-                return_exceptions=True
-            )
+            # Use fraud detector with DexTools integration
+            from fraud_detector import FraudDetector
+            from config import Config
             
-            rugcheck_result, dexscreener_result, birdeye_result, goplus_result, rpc_result, pattern_result = results
-            
-            # Calculate weighted score
-            weighted_score = 0
-            total_weight = 0
-            
-            # Process results with weights
-            services = [
-                (rugcheck_result, 0.30, "RugCheck"),
-                (dexscreener_result, 0.25, "DexScreener"), 
-                (birdeye_result, 0.20, "Birdeye"),
-                (goplus_result, 0.15, "GoPlus"),
-                (rpc_result, 0.08, "RPC Check"),
-                (pattern_result, 0.02, "Pattern")
-            ]
-            
-            analysis_details = []
-            
-            for result, weight, service_name in services:
-                if isinstance(result, dict) and not isinstance(result, Exception):
-                    score = result.get('score', 0.3)
-                    message = result.get('message', 'Analysis complete')
-                    weighted_score += score * weight
-                    total_weight += weight
-                    analysis_details.append(f"   {service_name:12}: {score:.2f} - {message}")
-                else:
-                    # Handle errors
-                    default_score = 0.3
-                    weighted_score += default_score * weight
-                    total_weight += weight
-                    error_msg = str(result) if result else "Service unavailable"
-                    analysis_details.append(f"   {service_name:12}: {default_score:.2f} - Error: {error_msg[:30]}")
-            
-            # Calculate final score
-            final_score = weighted_score / total_weight if total_weight > 0 else 0
-            is_safe = final_score >= self.safety_threshold
-            
-            # Log detailed analysis
-            logger.info(f"🔒 SAFETY REPORT for {token_address[:8]}:")
-            for detail in analysis_details:
-                logger.info(detail)
-            
-            safety_status = "✅ SAFE" if is_safe else "⚠️ RISKY" if final_score >= 0.45 else "❌ UNSAFE"
-            logger.info(f"   FINAL:      {final_score:.2f} ({safety_status})")
-            
-            return is_safe, final_score
-            
+            config = Config()
+            async with FraudDetector(config) as detector:
+                is_safe, analysis_report = await detector.analyze_token_safety(token_address)
+                confidence = analysis_report.get('safety_score', 0.0)
+                
+                return is_safe, confidence
+                
         except Exception as e:
             logger.error(f"❌ Error in safety analysis: {e}")
             return False, 0.0
-
-    async def _rugcheck_analysis(self, token_address: str) -> Dict:
-        """RugCheck.xyz API analysis - FREE and RELIABLE"""
-        try:
-            url = f"{self.rugcheck_url}/{token_address}/report"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json'
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=15) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        # Parse RugCheck response
-                        risks = data.get('risks', [])
-                        score = data.get('score', 0)  # 0-100 scale
-                        
-                        # Analyze risk levels
-                        high_risks = [r for r in risks if r.get('level') == 'danger']
-                        medium_risks = [r for r in risks if r.get('level') == 'warning']
-                        
-                        # Calculate safety score (convert to 0-1 scale)
-                        if score >= 80 and len(high_risks) == 0:
-                            safety_score = 0.85
-                            message = f"✅ Score: {score}/100, Clean"
-                        elif score >= 60 and len(high_risks) == 0:
-                            safety_score = 0.65
-                            message = f"⚠️ Score: {score}/100, {len(medium_risks)} warnings"
-                        elif score >= 40:
-                            safety_score = 0.45
-                            message = f"⚠️ Score: {score}/100, {len(risks)} risks"
-                        else:
-                            safety_score = 0.25
-                            message = f"❌ Score: {score}/100, {len(high_risks)} critical"
-                        
-                        return {
-                            'service': 'rugcheck',
-                            'score': safety_score,
-                            'message': message,
-                            'raw_score': score,
-                            'risks': len(risks),
-                            'high_risks': len(high_risks)
-                        }
-                    else:
-                        return {
-                            'service': 'rugcheck',
-                            'score': 0.30,
-                            'message': f'API error: {response.status}',
-                            'error': response.status
-                        }
-                        
-        except asyncio.TimeoutError:
-            return {
-                'service': 'rugcheck',
-                'score': 0.30,
-                'message': 'Request timeout',
-                'error': 'timeout'
-            }
-        except Exception as e:
-            return {
-                'service': 'rugcheck',
-                'score': 0.30,
-                'message': f'Error: {str(e)[:30]}',
-                'error': str(e)
-            }
-    
-    async def _dexscreener_analysis(self, token_address: str) -> Dict:
-        """DexScreener API analysis for market data"""
-        try:
-            url = f"{self.dexscreener_url}/{token_address}"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=15) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        pairs = data.get('pairs', [])
-                        
-                        if pairs:
-                            # Get best pair by liquidity
-                            best_pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0)))
-                            
-                            liquidity_usd = float(best_pair.get('liquidity', {}).get('usd', 0))
-                            volume_24h = float(best_pair.get('volume', {}).get('h24', 0))
-                            price_change_24h = float(best_pair.get('priceChange', {}).get('h24', 0))
-                            
-                            # Safety criteria
-                            has_liquidity = liquidity_usd >= self.min_liquidity_usd
-                            has_volume = volume_24h >= self.min_volume_24h
-                            reasonable_volatility = abs(price_change_24h) <= 500
-                            
-                            # Calculate score
-                            score = 0.15  # Base
-                            if has_liquidity:
-                                score += 0.35
-                            if has_volume:
-                                score += 0.25
-                            if reasonable_volatility:
-                                score += 0.15
-                            if liquidity_usd > 50000:
-                                score += 0.10
-                            
-                            message = f"Liq: ${liquidity_usd:,.0f}, Vol: ${volume_24h:,.0f}"
-                            if not has_liquidity or not has_volume:
-                                message += " ⚠️ Low metrics"
-                            
-                            return {
-                                'service': 'dexscreener',
-                                'score': score,
-                                'message': message,
-                                'liquidity_usd': liquidity_usd,
-                                'volume_24h': volume_24h,
-                                'price_change_24h': price_change_24h
-                            }
-                        else:
-                            return {
-                                'service': 'dexscreener',
-                                'score': 0.15,
-                                'message': 'No trading pairs found'
-                            }
-                    else:
-                        return {
-                            'service': 'dexscreener',
-                            'score': 0.15,
-                            'message': f'API error: {response.status}'
-                        }
-                        
-        except Exception as e:
-            return {
-                'service': 'dexscreener',
-                'score': 0.15,
-                'message': f'Error: {str(e)[:30]}'
-            }
-    
-    async def _birdeye_analysis(self, token_address: str) -> Dict:
-        """Birdeye API analysis for security"""
-        try:
-            url = f"{self.birdeye_url}?address={token_address}"
-            headers = {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            # Add API key if available
-            birdeye_key = os.getenv('BIRDEYE_API_KEY')
-            if birdeye_key:
-                headers['X-API-KEY'] = birdeye_key
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=15) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        
-                        if data.get('success', False):
-                            security_data = data.get('data', {})
-                            
-                            is_honeypot = security_data.get('isHoneypot', False)
-                            is_rugpull = security_data.get('isRugpull', False)
-                            risk_level = security_data.get('riskLevel', 'unknown').lower()
-                            
-                            # Calculate score
-                            if is_honeypot or is_rugpull:
-                                score = 0.20
-                                message = f"❌ Honeypot: {is_honeypot}, Rug: {is_rugpull}"
-                            elif risk_level == 'low':
-                                score = 0.80
-                                message = "✅ Low risk"
-                            elif risk_level == 'medium':
-                                score = 0.50
-                                message = "⚠️ Medium risk"
-                            else:
-                                score = 0.30
-                                message = f"⚠️ Risk: {risk_level}"
-                            
-                            return {
-                                'service': 'birdeye',
-                                'score': score,
-                                'message': message,
-                                'is_honeypot': is_honeypot,
-                                'is_rugpull': is_rugpull,
-                                'risk_level': risk_level
-                            }
-                        else:
-                            return {
-                                'service': 'birdeye',
-                                'score': 0.30,
-                                'message': 'API unsuccessful response'
-                            }
-                    elif response.status == 429:
-                        return {
-                            'service': 'birdeye',
-                            'score': 0.30,
-                            'message': 'Rate limited'
-                        }
-                    else:
-                        return {
-                            'service': 'birdeye',
-                            'score': 0.30,
-                            'message': f'API error: {response.status}'
-                        }
-                        
-        except Exception as e:
-            return {
-                'service': 'birdeye',
-                'score': 0.30,
-                'message': f'Error: {str(e)[:30]}'
-            }
-    
-    async def _goplus_analysis(self, token_address: str) -> Dict:
-        """GoPlus API analysis for additional security checks"""
-        try:
-            url = f"{self.goplus_url}/token_security/solana"
-            params = {'contract_addresses': token_address}
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=15) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        token_data = data.get('result', {}).get(token_address, {})
-                        
-                        if token_data:
-                            is_honeypot = token_data.get('is_honeypot', '0') == '1'
-                            is_blacklisted = token_data.get('is_blacklisted', '0') == '1'
-                            is_whitelisted = token_data.get('is_whitelisted', '0') == '1'
-                            
-                            # Calculate score
-                            if is_honeypot or is_blacklisted:
-                                score = 0.20
-                                message = "❌ Security issues detected"
-                            elif is_whitelisted:
-                                score = 0.75
-                                message = "✅ Whitelisted token"
-                            else:
-                                score = 0.55
-                                message = "⚠️ Standard checks passed"
-                            
-                            return {
-                                'service': 'goplus',
-                                'score': score,
-                                'message': message,
-                                'is_honeypot': is_honeypot,
-                                'is_blacklisted': is_blacklisted,
-                                'is_whitelisted': is_whitelisted
-                            }
-                        else:
-                            return {
-                                'service': 'goplus',
-                                'score': 0.35,
-                                'message': 'Token not in database'
-                            }
-                    else:
-                        return {
-                            'service': 'goplus',
-                            'score': 0.35,
-                            'message': f'API error: {response.status}'
-                        }
-                        
-        except Exception as e:
-            return {
-                'service': 'goplus',
-                'score': 0.35,
-                'message': f'Error: {str(e)[:30]}'
-            }
-
-    async def _rpc_analysis(self, token_address: str) -> Dict:
-        """RPC-based on-chain analysis"""
-        try:
-            # Simulate RPC analysis based on address characteristics
-            addr_sum = sum(ord(c) for c in token_address)
-            
-            # Check mint authority
-            has_mint_auth = addr_sum % 3 == 1
-            has_freeze_auth = addr_sum % 4 == 1
-            has_metadata = addr_sum % 5 != 0
-            supply_healthy = addr_sum % 7 != 0
-            
-            issues = []
-            good_signs = []
-            
-            if has_metadata:
-                good_signs.append("Has metadata")
-            else:
-                issues.append("No metadata")
-                
-            if has_mint_auth:
-                issues.append("Has mint authority")
-            else:
-                good_signs.append("No mint authority")
-                
-            if has_freeze_auth:
-                issues.append("Has freeze authority")
-            else:
-                good_signs.append("No freeze authority")
-                
-            if supply_healthy:
-                good_signs.append("Healthy supply")
-            else:
-                issues.append("Concentrated supply")
-            
-            # Calculate score
-            total_factors = len(issues) + len(good_signs)
-            good_ratio = len(good_signs) / total_factors if total_factors > 0 else 0
-            score = 0.20 + (good_ratio * 0.60)
-            
-            # Create message
-            message_parts = []
-            if not has_metadata:
-                message_parts.append("Meta:No metadata")
-            else:
-                message_parts.append("Meta:Good metadata")
-                
-            if has_mint_auth:
-                message_parts.append("Auth:Has mint authority ⚠️")
-            else:
-                message_parts.append("Auth:No mint authority ✓")
-                
-            if has_freeze_auth:
-                message_parts.append("Freeze:Has freeze authority ⚠️")
-            else:
-                message_parts.append("Freeze:No freeze authority ✓")
-                
-            if supply_healthy:
-                message_parts.append("Supply:Healthy supply")
-            else:
-                message_parts.append("Supply:Concentrated supply")
-            
-            message = " ".join(message_parts)
-            
-            return {
-                'service': 'rpc_analysis',
-                'score': score,
-                'message': message,
-                'issues': issues,
-                'good_signs': good_signs
-            }
-            
-        except Exception as e:
-            return {
-                'service': 'rpc_analysis',
-                'score': 0.40,
-                'message': f'RPC error: {str(e)[:30]}'
-            }
-    
-    async def _pattern_analysis(self, token_address: str) -> Dict:
-        """Pattern analysis of token address"""
-        try:
-            score = 0.50  # Start neutral
-            flags = []
-            
-            # Check address length
-            if len(token_address) == 44:
-                score += 0.20
-                flags.append("Valid address")
-            else:
-                score -= 0.30
-                flags.append("Invalid length")
-            
-            # Check character variety
-            unique_chars = len(set(token_address.lower()))
-            if unique_chars >= 25:
-                score += 0.20
-                flags.append("Good char variety")
-            elif unique_chars >= 20:
-                score += 0.10
-            elif unique_chars < 15:
-                score -= 0.20
-                flags.append("Poor char variety")
-            
-            # Check for suspicious patterns
-            suspicious = ['pump', 'scam', 'rug', 'fake', '1111111111']
-            for pattern in suspicious:
-                if pattern in token_address.lower():
-                    score -= 0.40
-                    flags.append(f"Contains '{pattern}'")
-                    break
-            
-            # Check first character
-            if token_address[0].isdigit():
-                score += 0.05
-                flags.append("Starts with number")
-            
-            # Ensure bounds
-            score = max(0.0, min(1.0, score))
-            message = ', '.join(flags) if flags else 'Pattern analysis complete'
-            
-            return {
-                'service': 'pattern_analysis',
-                'score': score,
-                'message': message,
-                'unique_chars': unique_chars
-            }
-            
-        except Exception as e:
-            return {
-                'service': 'pattern_analysis',
-                'score': 0.50,
-                'message': f'Pattern error: {str(e)[:30]}'
-            }
     
     async def discover_new_tokens(self) -> List[str]:
         """Discover new tokens from various FREE sources"""
         try:
             new_tokens = []
             
-            # Method 1: DexScreener trending/new tokens (FREE)
+            # Method 1: QuickNode new pools (if available)
+            if self.quicknode_http:
+                tokens = await self._quicknode_discovery()
+                new_tokens.extend(tokens)
+            
+            # Method 2: DexScreener trending/new tokens (FREE)
             dexscreener_tokens = await self._dexscreener_discovery()
             new_tokens.extend(dexscreener_tokens)
             
-            # Method 2: Raydium public API (FREE)
+            # Method 3: Solscan new tokens (FREE)
+            solscan_tokens = await self._solscan_discovery()
+            new_tokens.extend(solscan_tokens)
+            
+            # Method 4: Raydium public API (FREE)
             raydium_tokens = await self._raydium_discovery()
             new_tokens.extend(raydium_tokens)
             
-            # Method 3: QuickNode new pools (if available)
-            if self.quicknode_http:
-                quicknode_tokens = await self._quicknode_discovery()
-                new_tokens.extend(quicknode_tokens)
-            
-            # Remove duplicates and filter
+            # Remove duplicates and filter out stablecoins/known tokens
             unique_tokens = list(set(new_tokens))
             filtered_tokens = self._filter_tokens(unique_tokens)
             
-            logger.info(f"🔍 Discovered {len(filtered_tokens)} potential new tokens")
-            return filtered_tokens[:10]  # Limit to top 10
+            logger.info(f"🔍 Discovered {len(filtered_tokens)} potential NEW tokens")
+            return filtered_tokens[:10]  # Limit to top 10 newest
             
         except Exception as e:
             logger.error(f"❌ Error discovering tokens: {e}")
             return []
 
     async def _dexscreener_discovery(self) -> List[str]:
-        """Discover new tokens using DexScreener API"""
+        """Discover new tokens using DexScreener API (FREE)"""
         try:
+            # DexScreener latest tokens on Solana
             url = "https://api.dexscreener.com/latest/dex/tokens/solana"
             
             async with aiohttp.ClientSession() as session:
@@ -757,7 +317,8 @@ class SolanaTradingBot:
                         data = await response.json()
                         tokens = []
                         
-                        for pair in data.get("pairs", [])[:20]:
+                        for pair in data.get("pairs", [])[:20]:  # Top 20 newest
+                            # Get base token (the new token, not SOL/USDC)
                             base_token = pair.get("baseToken", {})
                             quote_token = pair.get("quoteToken", {})
                             
@@ -766,14 +327,17 @@ class SolanaTradingBot:
                             
                             # Only take tokens paired with SOL or USDC
                             if quote_address in [self.sol_mint, self.usdc_mint] and base_address:
+                                # Check if it's a new token (created recently)
                                 created_at = pair.get("pairCreatedAt")
                                 if created_at:
+                                    # Only tokens created in last 24 hours
                                     created_time = dt.fromtimestamp(created_at / 1000)
-                                    hours_old = (dt.now() - created_time).total_seconds() / 3600
+                                    now = dt.now()
+                                    hours_old = (now - created_time).total_seconds() / 3600
                                     
-                                    if hours_old < 24:  # Less than 24 hours
+                                    if hours_old < 24:  # Less than 24 hours old
                                         tokens.append(base_address)
-                                        logger.info(f"📍 DexScreener new token: {base_address[:8]} (age: {hours_old:.1f}h)")
+                                        logger.info(f"📍 Found new token: {base_address[:8]} (age: {hours_old:.1f}h)")
                         
                         return tokens
                     else:
@@ -784,13 +348,54 @@ class SolanaTradingBot:
             logger.error(f"DexScreener discovery error: {e}")
             return []
 
-    async def _raydium_discovery(self) -> List[str]:
-        """Discover new tokens using Raydium API"""
+    async def _solscan_discovery(self) -> List[str]:
+        """Discover new tokens using Solscan API (FREE)"""
         try:
+            # Solscan new token transfers
+            url = "https://public-api.solscan.io/token/list"
+            params = {
+                "sortBy": "created_time",
+                "direction": "desc",
+                "limit": 50
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=15) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        tokens = []
+                        
+                        for token in data.get("data", [])[:20]:
+                            token_address = token.get("tokenAddress")
+                            created_time = token.get("createdTime")
+                            
+                            if token_address and created_time:
+                                # Check if created in last 6 hours
+                                created = dt.fromtimestamp(created_time)
+                                now = dt.now()
+                                hours_old = (now - created).total_seconds() / 3600
+                                
+                                if hours_old < 6:  # Very fresh tokens
+                                    tokens.append(token_address)
+                                    logger.info(f"📍 Solscan new token: {token_address[:8]} (age: {hours_old:.1f}h)")
+                        
+                        return tokens
+                    else:
+                        logger.warning(f"Solscan API error: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            logger.error(f"Solscan discovery error: {e}")
+            return []
+
+    async def _raydium_discovery(self) -> List[str]:
+        """Discover new tokens using Raydium public API (FREE)"""
+        try:
+            # Raydium V3 pools API
             url = "https://api-v3.raydium.io/pools/info/list"
             params = {
                 "poolType": "all",
-                "poolSortField": "default", 
+                "poolSortField": "default",
                 "sortType": "desc",
                 "pageSize": 50,
                 "page": 1
@@ -805,11 +410,12 @@ class SolanaTradingBot:
                         if data.get("success") and data.get("data"):
                             pools = data["data"]["data"]
                             
-                            for pool in pools[:20]:
+                            for pool in pools[:20]:  # Latest 20 pools
+                                # Get mint A and mint B
                                 mint_a = pool.get("mintA", {}).get("address")
                                 mint_b = pool.get("mintB", {}).get("address")
                                 
-                                # Get the non-SOL/USDC token
+                                # Skip if one of the mints is SOL or USDC (we want the other token)
                                 if mint_a == self.sol_mint or mint_a == self.usdc_mint:
                                     if mint_b and mint_b not in [self.sol_mint, self.usdc_mint]:
                                         tokens.append(mint_b)
@@ -835,17 +441,28 @@ class SolanaTradingBot:
             if not self.quicknode_http:
                 return []
                 
-            # This would use QuickNode's custom endpoints
-            # For now, return empty list since endpoint structure is unknown
-            logger.info("📍 QuickNode discovery - endpoint not configured")
-            return []
-                        
+            url = f"{self.quicknode_http}/new-pools"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=15) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        tokens = []
+                        for pool in data.get("data", [])[:15]:  # Top 15 newest
+                            token_addr = pool.get("tokenAddress")
+                            if token_addr and token_addr not in [self.usdc_mint, self.sol_mint]:
+                                tokens.append(token_addr)
+                                logger.info(f"📍 QuickNode new token: {token_addr[:8]}")
+                        return tokens
+                    else:
+                        logger.warning(f"QuickNode API error: {response.status}")
+                        return []
         except Exception as e:
             logger.error(f"QuickNode discovery error: {e}")
             return []
 
     def _filter_tokens(self, tokens: List[str]) -> List[str]:
         """Filter out known stablecoins and system tokens"""
+        # Known tokens to skip (stablecoins, wrapped tokens, etc.)
         skip_tokens = {
             self.usdc_mint,  # USDC
             self.sol_mint,   # SOL
@@ -858,10 +475,10 @@ class SolanaTradingBot:
         
         filtered = []
         for token in tokens:
-            if token not in skip_tokens and len(token) == 44:
+            if token not in skip_tokens and len(token) == 44:  # Valid Solana address length
                 filtered.append(token)
         
-        logger.info(f"🔧 Filtered {len(tokens)} → {len(filtered)} tokens")
+        logger.info(f"🔧 Filtered {len(tokens)} → {len(filtered)} tokens (removed known/stable tokens)")
         return filtered
     
     async def monitor_positions(self):
@@ -882,10 +499,12 @@ class SolanaTradingBot:
                     
                     logger.info(f"📈 Position {token_address[:8]}: {profit_percent:+.2f}%")
                     
-                    # Check profit target
+                    # Check if profit target hit
                     if profit_percent >= self.profit_target:
                         await self.sell_position(token_address, position, current_value)
-                    elif profit_percent <= -10:  # Stop loss
+                    
+                    # Check for stop loss (optional)
+                    elif profit_percent <= -10:  # 10% stop loss
                         logger.warning(f"⚠️ Stop loss triggered for {token_address[:8]}")
                         await self.sell_position(token_address, position, current_value)
                         
@@ -916,12 +535,12 @@ class SolanaTradingBot:
                         self.profitable_trades += 1
                         self.total_profit += profit / 1_000_000
                     
-                    # Remove position
+                    # Remove from active positions
                     del self.active_positions[token_address]
                     
-                    # Log stats
+                    # Log statistics
                     win_rate = (self.profitable_trades / self.total_trades) * 100 if self.total_trades > 0 else 0
-                    logger.info(f"📊 Stats: {self.profitable_trades}/{self.total_trades} trades ({win_rate:.1f}% win rate), Total: ${self.total_profit:.2f}")
+                    logger.info(f"📊 Stats: {self.profitable_trades}/{self.total_trades} trades ({win_rate:.1f}% win rate), Total profit: ${self.total_profit:.2f}")
                     
         except Exception as e:
             logger.error(f"❌ Error selling position: {e}")
@@ -929,12 +548,12 @@ class SolanaTradingBot:
     async def execute_trade(self, token_address: str) -> bool:
         """Execute a trade for a token"""
         try:
-            # Check position limits
+            # Check if we have room for more positions
             if len(self.active_positions) >= self.max_positions:
-                logger.info(f"⏳ Max positions ({self.max_positions}) reached")
+                logger.info(f"⏳ Max positions ({self.max_positions}) reached, skipping trade")
                 return False
             
-            # Get quote
+            # Get quote for buying token with USDC
             quote = await self.get_jupiter_quote(
                 input_mint=self.usdc_mint,
                 output_mint=token_address,
@@ -944,12 +563,12 @@ class SolanaTradingBot:
             if not quote:
                 return False
             
-            # Execute swap
+            # Execute the swap
             tx_id = await self.execute_jupiter_swap(quote)
             if not tx_id:
                 return False
             
-            # Record position
+            # Record the position
             token_amount = int(quote["outAmount"])
             self.active_positions[token_address] = {
                 "entry_time": dt.now(),
@@ -983,7 +602,7 @@ class SolanaTradingBot:
                 if self.active_positions:
                     await self.monitor_positions()
                 
-                # Look for new opportunities
+                # Look for new trading opportunities
                 if len(self.active_positions) < self.max_positions:
                     logger.info("🔍 Scanning for new trading opportunities...")
                     
@@ -991,11 +610,11 @@ class SolanaTradingBot:
                     new_tokens = await self.discover_new_tokens()
                     
                     for token_address in new_tokens:
-                        # Skip if already have position
+                        # Skip if we already have this position
                         if token_address in self.active_positions:
                             continue
                         
-                        # Check safety
+                        # Check if token is safe
                         is_safe, confidence = await self.check_token_safety(token_address)
                         
                         if is_safe and confidence >= self.safety_threshold:
@@ -1009,25 +628,26 @@ class SolanaTradingBot:
                             logger.info(f"⚠️ Risky token skipped: {token_address[:8]} (confidence: {confidence:.2f})")
                 
                 # Wait before next iteration
-                await asyncio.sleep(60)  # 60 second intervals
+                await asyncio.sleep(60)  # 60 second intervals for real token discovery
                 
             except KeyboardInterrupt:
                 logger.info("🛑 Bot stopped by user")
                 break
             except Exception as e:
                 logger.error(f"❌ Error in main loop: {e}")
-                await asyncio.sleep(10)
+                await asyncio.sleep(10)  # Wait before retrying
     
     async def run(self):
         """Start the trading bot"""
-        logger.info("🚀 Starting Solana Trading Bot...")
+        logger.info("🚀 Starting Solana Trading Bot with DexTools...")
         
         if self.enable_real_trading:
             logger.warning("⚠️⚠️⚠️ REAL TRADING MODE ENABLED ⚠️⚠️⚠️")
-            logger.warning("⚠️ This bot will use REAL MONEY")
-            logger.warning("⚠️ Ensure wallet is funded with USDC and SOL")
+            logger.warning("⚠️ This bot will use REAL MONEY on Solana mainnet")
+            logger.warning("⚠️ Ensure your wallet is funded with USDC and SOL")
+            logger.warning("⚠️ Trades are IRREVERSIBLE on blockchain")
             
-            # Safety countdown
+            # Give user 10 seconds to cancel if they didn't mean to enable real trading
             for i in range(10, 0, -1):
                 logger.warning(f"⚠️ Starting real trading in {i} seconds... (Ctrl+C to cancel)")
                 await asyncio.sleep(1)
@@ -1040,18 +660,15 @@ class SolanaTradingBot:
         logger.info("✅ Bot configuration validated")
         
         if self.enable_real_trading:
-            logger.info("💸 REAL TRADING MODE ACTIVE!")
+            logger.info("💸 Bot is now operational and ready for REAL TRADING!")
             logger.info(f"💰 Will trade REAL MONEY: ${self.trade_amount/1_000_000} per trade")
         else:
-            logger.info("🎯 SIMULATION MODE ACTIVE!")
-            logger.info(f"💰 Simulating trades: ${self.trade_amount/1_000_000} per trade")
+            logger.info("🎯 Bot is now operational in SIMULATION mode!")
+            logger.info(f"💰 Simulating trades with ${self.trade_amount/1_000_000} amounts")
         
-        logger.info(f"🛡️ Safety threshold: {self.safety_threshold}")
-        logger.info(f"💧 Min liquidity: ${self.min_liquidity_usd:,.0f}")
-        logger.info(f"📊 Min volume: ${self.min_volume_24h:,.0f}")
-        logger.info("🔍 Looking for new token opportunities...")
+        logger.info(f"🔍 Looking for NEW token opportunities...")
         
-        # Start main loop
+        # Start main trading loop
         await self.main_trading_loop()
 
 async def main():

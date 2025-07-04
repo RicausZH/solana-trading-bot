@@ -30,12 +30,17 @@ class TokenScanner:
         
         try:
             # Method 1: QuickNode Metis API (Primary)
-            metis_tokens = await self._scan_metis_new_pools()
-            new_tokens.extend(metis_tokens)
+            if self.config.QUICKNODE_HTTP_URL:
+                metis_tokens = await self._scan_metis_new_pools()
+                new_tokens.extend(metis_tokens)
             
             # Method 2: Raydium Pool Monitoring (Backup)
             raydium_tokens = await self._scan_raydium_pools()
             new_tokens.extend(raydium_tokens)
+            
+            # Method 3: DexScreener trending
+            dexscreener_tokens = await self._scan_dexscreener_trending()
+            new_tokens.extend(dexscreener_tokens)
             
             # Remove duplicates
             unique_tokens = self._deduplicate_tokens(new_tokens)
@@ -50,7 +55,10 @@ class TokenScanner:
     async def _scan_metis_new_pools(self) -> List[Dict]:
         """Scan new pools using QuickNode Metis API"""
         try:
-            url = f"{self.config.QUICKNODE_HTTP_URL}new-pools"
+            if not self.config.QUICKNODE_HTTP_URL:
+                return []
+                
+            url = f"{self.config.QUICKNODE_HTTP_URL}/new-pools"
             
             async with self.session.get(url) as response:
                 if response.status == 200:
@@ -89,7 +97,7 @@ class TokenScanner:
                 'poolType': 'Standard',
                 'poolSortField': 'created_time',
                 'sortType': 'desc',
-                'pageSize': 10
+                'pageSize': 15
             }
             
             async with self.session.get(url, params=params) as response:
@@ -126,6 +134,46 @@ class TokenScanner:
                     
         except Exception as e:
             logger.error(f"Error scanning Raydium pools: {e}")
+            return []
+    
+    async def _scan_dexscreener_trending(self) -> List[Dict]:
+        """Scan DexScreener for trending tokens"""
+        try:
+            url = "https://api.dexscreener.com/latest/dex/search/?q=solana"
+            
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    tokens = []
+                    for pair in data.get('pairs', [])[:10]:  # Top 10 trending
+                        base_token = pair.get('baseToken', {})
+                        quote_token = pair.get('quoteToken', {})
+                        
+                        base_address = base_token.get('address')
+                        quote_address = quote_token.get('address')
+                        
+                        if (quote_address in [self.config.SOL_MINT, self.config.USDC_MINT] 
+                            and base_address 
+                            and base_address not in self.discovered_tokens):
+                            
+                            token_info = {
+                                'address': base_address,
+                                'quote_address': quote_address,
+                                'exchange': 'dexscreener',
+                                'timestamp': pair.get('pairCreatedAt'),
+                                'volume_24h': pair.get('volume', {}).get('h24', 0),
+                                'liquidity': pair.get('liquidity', {}).get('usd', 0)
+                            }
+                            tokens.append(token_info)
+                            self.discovered_tokens.add(base_address)
+                    
+                    return tokens
+                else:
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"Error scanning DexScreener: {e}")
             return []
     
     def _deduplicate_tokens(self, tokens: List[Dict]) -> List[Dict]:

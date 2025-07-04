@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Solana Trading Bot - REAL TRADING VERSION with Ultra-Minimal Transaction Optimization
+Solana Trading Bot - COMPLETE VERSION WITH BLACKLIST SYSTEM
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet
-Uses direct Jupiter API calls + Real blockchain transactions
-Includes: Token Discovery, Advanced Fraud Detection, REAL Trading, Balance Verification
-Updated: 2025-07-04 - Ultra-minimal transaction optimization for size constraints
+Features: Token Blacklist, Duplicate Prevention, Balance Verification, Transaction Optimization
+Updated: 2025-07-04 - Complete logic fixes with smart loss prevention
 """
 
 import os
@@ -17,7 +16,7 @@ import time
 import datetime
 import requests
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime as dt
+from datetime import datetime as dt, timedelta
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -33,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class SolanaTradingBot:
     def __init__(self):
-        """Initialize the trading bot with configuration"""
+        """Initialize the trading bot with blacklist system"""
         # Environment variables
         self.private_key = os.getenv("SOLANA_PRIVATE_KEY")
         self.public_key = os.getenv("SOLANA_PUBLIC_KEY") 
@@ -47,9 +46,9 @@ class SolanaTradingBot:
         # Trading configuration
         self.trade_amount = int(float(os.getenv("TRADE_AMOUNT", "1.0")) * 1_000_000)
         self.profit_target = float(os.getenv("PROFIT_TARGET", "3.0"))
-        self.stop_loss_percent = float(os.getenv("STOP_LOSS_PERCENT", "15.0"))
         self.max_positions = int(os.getenv("MAX_POSITIONS", "10"))
-        self.slippage = int(os.getenv("SLIPPAGE_BPS", "50"))
+        self.slippage = int(os.getenv("SLIPPAGE_BPS", "100"))
+        self.stop_loss_percent = float(os.getenv("STOP_LOSS_PERCENT", "15.0"))
         
         # Token addresses
         self.usdc_mint = os.getenv("USDC_MINT", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
@@ -70,10 +69,21 @@ class SolanaTradingBot:
         
         # Safety thresholds
         self.safety_threshold = float(os.getenv("SAFETY_THRESHOLD", "0.55"))
-        self.min_liquidity_usd = float(os.getenv("MIN_LIQUIDITY_USD", "5000"))
-        self.min_volume_24h = float(os.getenv("MIN_VOLUME_24H", "1000"))
+        self.min_liquidity_usd = float(os.getenv("MIN_LIQUIDITY_USD", "3000"))
+        self.min_volume_24h = float(os.getenv("MIN_VOLUME_24H", "800"))
         
-        logger.info("🤖 Solana Trading Bot initialized with Free APIs")
+        # Token blacklist system
+        self.token_blacklist = set()  # Tokens to never trade again
+        self.blacklist_threshold = float(os.getenv("BLACKLIST_THRESHOLD", "20.0"))  # 20% loss threshold
+        self.blacklist_file = "token_blacklist.json"  # Persistent storage
+        
+        # Load existing blacklist
+        self.load_blacklist()
+        
+        # Initialize diversification tracking
+        self.recently_traded = set()
+        
+        logger.info("🤖 Solana Trading Bot initialized with Blacklist System")
         logger.info(f"💰 Trade Amount: ${self.trade_amount/1_000_000}")
         logger.info(f"🎯 Profit Target: {self.profit_target}%")
         logger.info(f"🛑 Stop Loss: {self.stop_loss_percent}%")
@@ -81,6 +91,8 @@ class SolanaTradingBot:
         logger.info(f"🔒 Safety Threshold: {self.safety_threshold}")
         logger.info(f"💧 Min Liquidity: ${self.min_liquidity_usd:,.0f}")
         logger.info(f"📈 Min Volume 24h: ${self.min_volume_24h:,.0f}")
+        logger.info(f"🚫 Blacklist threshold: {self.blacklist_threshold}%")
+        logger.info(f"🚫 Blacklisted tokens loaded: {len(self.token_blacklist)}")
         
         # CRITICAL WARNING
         if self.enable_real_trading:
@@ -88,6 +100,44 @@ class SolanaTradingBot:
             logger.warning("⚠️ Ensure wallet is funded with USDC and SOL")
         else:
             logger.info("💡 Simulation mode - No real money will be used")
+    
+    def load_blacklist(self):
+        """Load blacklist from persistent storage"""
+        try:
+            if os.path.exists(self.blacklist_file):
+                with open(self.blacklist_file, 'r') as f:
+                    data = json.load(f)
+                    self.token_blacklist = set(data.get('blacklisted_tokens', []))
+                    logger.info(f"📋 Loaded {len(self.token_blacklist)} blacklisted tokens from file")
+            else:
+                logger.info("📋 No existing blacklist file found, starting fresh")
+        except Exception as e:
+            logger.error(f"❌ Error loading blacklist: {e}")
+            self.token_blacklist = set()
+
+    def save_blacklist(self):
+        """Save blacklist to persistent storage"""
+        try:
+            blacklist_data = {
+                'blacklisted_tokens': list(self.token_blacklist),
+                'last_updated': dt.now().isoformat(),
+                'threshold': self.blacklist_threshold
+            }
+            with open(self.blacklist_file, 'w') as f:
+                json.dump(blacklist_data, f, indent=2)
+            logger.info(f"💾 Saved {len(self.token_blacklist)} tokens to blacklist file")
+        except Exception as e:
+            logger.error(f"❌ Error saving blacklist: {e}")
+
+    def add_to_blacklist(self, token_address: str, loss_percent: float, reason: str = "high_loss"):
+        """Add token to blacklist with logging"""
+        if token_address not in self.token_blacklist:
+            self.token_blacklist.add(token_address)
+            self.save_blacklist()  # Persist immediately
+            logger.warning(f"🚫 BLACKLISTED: {token_address[:8]} ({loss_percent:.2f}% loss) - {reason}")
+            logger.warning(f"🚫 Total blacklisted tokens: {len(self.token_blacklist)}")
+        else:
+            logger.info(f"🚫 {token_address[:8]} already blacklisted")
     
     async def validate_configuration(self) -> bool:
         """Validate bot configuration"""
@@ -155,6 +205,59 @@ class SolanaTradingBot:
         except:
             return 0.0
     
+    async def verify_token_balance(self, token_address: str, expected_amount: int) -> Tuple[bool, int]:
+        """Verify actual token balance before selling"""
+        try:
+            # Get Associated Token Account for this token
+            from solders.pubkey import Pubkey
+            from spl.token.constants import ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID
+            
+            # Calculate ATA address
+            wallet_pubkey = Pubkey.from_string(self.public_key)
+            token_pubkey = Pubkey.from_string(token_address)
+            
+            # Find Associated Token Account
+            ata_address = Pubkey.find_program_address(
+                [
+                    bytes(wallet_pubkey),
+                    bytes(TOKEN_PROGRAM_ID),
+                    bytes(token_pubkey)
+                ],
+                ASSOCIATED_TOKEN_PROGRAM_ID
+            )[0]
+            
+            # Get account balance via RPC
+            rpc_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountBalance",
+                "params": [str(ata_address)]
+            }
+            
+            response = requests.post(
+                self.rpc_url,
+                json=rpc_payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if "result" in result and result["result"]["value"]:
+                    actual_amount = int(result["result"]["value"]["amount"])
+                    logger.info(f"💰 Token balance check: Expected {expected_amount}, Actual {actual_amount}")
+                    return actual_amount >= expected_amount, actual_amount
+                else:
+                    logger.warning(f"⚠️ Token account not found for {token_address[:8]}")
+                    return False, 0
+            else:
+                logger.error(f"❌ Failed to check token balance: {response.status_code}")
+                return False, 0
+                
+        except Exception as e:
+            logger.error(f"❌ Error verifying token balance: {e}")
+            return False, 0
+    
     async def get_jupiter_quote(self, input_mint: str, output_mint: str, amount: int) -> Optional[Dict]:
         """Get quote from Jupiter API"""
         try:
@@ -211,59 +314,6 @@ class SolanaTradingBot:
         except Exception as e:
             logger.error(f"❌ Error getting minimal quote: {e}")
             return None
-    
-    async def verify_token_balance(self, token_address: str, expected_amount: int) -> Tuple[bool, int]:
-        """Verify actual token balance before selling"""
-        try:
-            # Get Associated Token Account for this token
-            from solders.pubkey import Pubkey
-            from spl.token.constants import ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID
-            
-            # Calculate ATA address
-            wallet_pubkey = Pubkey.from_string(self.public_key)
-            token_pubkey = Pubkey.from_string(token_address)
-            
-            # Find Associated Token Account
-            ata_address = Pubkey.find_program_address(
-                [
-                    bytes(wallet_pubkey),
-                    bytes(TOKEN_PROGRAM_ID),
-                    bytes(token_pubkey)
-                ],
-                ASSOCIATED_TOKEN_PROGRAM_ID
-            )[0]
-            
-            # Get account balance via RPC
-            rpc_payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenAccountBalance",
-                "params": [str(ata_address)]
-            }
-            
-            response = requests.post(
-                self.rpc_url,
-                json=rpc_payload,
-                headers={"Content-Type": "application/json"},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if "result" in result and result["result"]["value"]:
-                    actual_amount = int(result["result"]["value"]["amount"])
-                    logger.info(f"💰 Token balance check: Expected {expected_amount}, Actual {actual_amount}")
-                    return actual_amount >= expected_amount, actual_amount
-                else:
-                    logger.warning(f"⚠️ Token account not found for {token_address[:8]}")
-                    return False, 0
-            else:
-                logger.error(f"❌ Failed to check token balance: {response.status_code}")
-                return False, 0
-                
-        except Exception as e:
-            logger.error(f"❌ Error verifying token balance: {e}")
-            return False, 0
     
     async def send_transaction_ultra_minimal(self, transaction_data: str) -> Optional[str]:
         """Ultra-minimal transaction sending"""
@@ -343,9 +393,9 @@ class SolanaTradingBot:
             
             # Get a fresh quote with minimal routing
             minimal_quote = await self.get_jupiter_quote_minimal(
-                quote.get("inputMint"),
-                quote.get("outputMint"),
-                int(quote.get("inAmount"))
+                input_mint=quote.get("inputMint"),
+                output_mint=quote.get("outputMint"),
+                amount=int(quote.get("inAmount"))
             )
             
             if not minimal_quote:
@@ -381,7 +431,7 @@ class SolanaTradingBot:
                             # Check size before sending
                             transaction_bytes = base64.b64decode(transaction_data)
                             if len(transaction_bytes) > 1232:
-                                logger.warning(f"⚠️ Transaction too large: {len(transaction_bytes)} bytes, requesting smaller route...")
+                                logger.error(f"❌ Even minimal transaction too large: {len(transaction_bytes)} bytes")
                                 return None
                             
                             tx_id = await self.send_transaction_ultra_minimal(transaction_data)
@@ -417,9 +467,9 @@ class SolanaTradingBot:
             # Try 2: Get fresh minimal quote
             logger.info("🔄 Attempting fresh minimal quote...")
             fresh_quote = await self.get_jupiter_quote_minimal(
-                quote.get("inputMint"),
-                quote.get("outputMint"),
-                int(quote.get("inAmount"))
+                input_mint=quote.get("inputMint"),
+                output_mint=quote.get("outputMint"),
+                amount=int(quote.get("inAmount"))
             )
             
             if fresh_quote:
@@ -432,9 +482,9 @@ class SolanaTradingBot:
             smaller_amount = int(quote.get("inAmount")) // 2
             if smaller_amount > 100000:  # Only if meaningful amount
                 split_quote = await self.get_jupiter_quote_minimal(
-                    quote.get("inputMint"),
-                    quote.get("outputMint"),
-                    smaller_amount
+                    input_mint=quote.get("inputMint"),
+                    output_mint=quote.get("outputMint"),
+                    amount=smaller_amount
                 )
                 if split_quote:
                     result = await self.execute_jupiter_swap_minimal(split_quote)
@@ -450,24 +500,8 @@ class SolanaTradingBot:
             logger.error(f"❌ Error in optimized swap execution: {e}")
             return None
     
-    async def execute_jupiter_swap(self, quote: Dict) -> Optional[str]:
-        """Execute swap via Jupiter API - OPTIMIZED VERSION"""
-        try:
-            # For simulation mode
-            if not self.enable_real_trading:
-                tx_id = f"sim_{int(time.time())}"
-                logger.info(f"✅ SIMULATED swap: {tx_id}")
-                return tx_id
-            
-            # Use optimized execution method
-            return await self.execute_jupiter_swap_optimized(quote)
-            
-        except Exception as e:
-            logger.error(f"❌ Error executing Jupiter swap: {e}")
-            return None
-    
     async def check_token_safety(self, token_address: str) -> Tuple[bool, float]:
-        """Check if token is safe using reliable free APIs"""
+        """Check if token is safe using simplified analysis"""
         try:
             # Skip SOL for now - focus on new tokens
             if token_address == self.sol_mint:
@@ -476,21 +510,8 @@ class SolanaTradingBot:
             
             logger.info(f"🔍 Analyzing token safety: {token_address}")
             
-            # Import and use fraud detector
-            try:
-                from fraud_detector import FraudDetector
-                from config import Config
-                
-                config = Config()
-                async with FraudDetector(config) as detector:
-                    is_safe, analysis_report = await detector.analyze_token_safety(token_address)
-                    confidence = analysis_report.get('safety_score', 0.0)
-                    
-                    return is_safe, confidence
-            except ImportError:
-                # Fallback if fraud_detector import fails
-                logger.warning("⚠️ Fraud detector import failed, using simplified analysis")
-                return await self.simplified_safety_check(token_address)
+            # Use simplified safety check
+            return await self.simplified_safety_check(token_address)
             
         except Exception as e:
             logger.error(f"❌ Error in safety analysis: {e}")
@@ -589,7 +610,7 @@ class SolanaTradingBot:
             return 0.50
     
     async def discover_new_tokens(self) -> List[str]:
-        """Discover new tokens from various FREE sources"""
+        """Discover new tokens with proper filtering"""
         try:
             new_tokens = []
             
@@ -601,9 +622,9 @@ class SolanaTradingBot:
             raydium_tokens = await self.raydium_discovery()
             new_tokens.extend(raydium_tokens)
             
-            # Remove duplicates and filter out stablecoins/known tokens
+            # Remove duplicates and filter out problematic tokens
             unique_tokens = list(set(new_tokens))
-            filtered_tokens = self.filter_tokens(unique_tokens)
+            filtered_tokens = self.filter_tokens_enhanced(unique_tokens)
             
             logger.info(f"🔍 Discovered {len(filtered_tokens)} potential NEW tokens")
             return filtered_tokens[:10]  # Limit to top 10 newest
@@ -611,6 +632,44 @@ class SolanaTradingBot:
         except Exception as e:
             logger.error(f"❌ Error discovering tokens: {e}")
             return []
+    
+    def filter_tokens_enhanced(self, tokens: List[str]) -> List[str]:
+        """Enhanced token filtering with blacklist checking"""
+        # Known tokens to skip (stablecoins, wrapped tokens, etc.)
+        skip_tokens = {
+            self.usdc_mint,  # USDC
+            self.sol_mint,   # SOL
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",   # mSOL
+            "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj",   # stSOL
+            "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",   # BONK
+            "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",   # JitoSOL
+        }
+        
+        # Add currently active positions to skip list
+        skip_tokens.update(self.active_positions.keys())
+        
+        # Add blacklisted tokens to skip list
+        skip_tokens.update(self.token_blacklist)
+        
+        filtered = []
+        blacklisted_count = 0
+        
+        for token in tokens:
+            if token and len(token) == 44:  # Valid Solana address length
+                if token in self.token_blacklist:
+                    blacklisted_count += 1
+                    continue  # Skip blacklisted tokens
+                elif token not in skip_tokens:
+                    # Additional check: not in recently traded
+                    if token not in self.recently_traded:
+                        filtered.append(token)
+        
+        logger.info(f"🔧 Filtered {len(tokens)} → {len(filtered)} tokens")
+        logger.info(f"🚫 Blocked {blacklisted_count} blacklisted tokens")
+        logger.info(f"🚫 Total blacklist size: {len(self.token_blacklist)}")
+        
+        return filtered
     
     async def dexscreener_discovery(self) -> List[str]:
         """Discover new tokens using DexScreener API (FREE)"""
@@ -693,27 +752,6 @@ class SolanaTradingBot:
             logger.error(f"Raydium discovery error: {e}")
             return []
     
-    def filter_tokens(self, tokens: List[str]) -> List[str]:
-        """Filter out known stablecoins and system tokens"""
-        # Known tokens to skip (stablecoins, wrapped tokens, etc.)
-        skip_tokens = {
-            self.usdc_mint,  # USDC
-            self.sol_mint,   # SOL
-            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
-            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",   # mSOL
-            "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj",   # stSOL
-            "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",   # BONK
-            "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",   # JitoSOL
-        }
-        
-        filtered = []
-        for token in tokens:
-            if token and token not in skip_tokens and len(token) == 44:  # Valid Solana address length
-                filtered.append(token)
-        
-        logger.info(f"🔧 Filtered {len(tokens)} → {len(filtered)} tokens (removed known/stable tokens)")
-        return filtered
-    
     async def monitor_positions(self):
         """Monitor active positions for profit targets"""
         try:
@@ -772,7 +810,7 @@ class SolanaTradingBot:
             logger.error(f"❌ Error monitoring positions: {e}")
     
     async def sell_position_verified(self, token_address: str, position: Dict, current_value: int) -> bool:
-        """Sell position with balance verification"""
+        """Sell position with blacklist checking"""
         try:
             logger.info(f"💰 Attempting to sell position: {token_address[:8]}")
             
@@ -817,6 +855,14 @@ class SolanaTradingBot:
                 profit_usdc = expected_usdc - original_usdc
                 profit_percent = (profit_usdc / original_usdc) * 100
                 
+                # BLACKLIST CHECK: Add to blacklist if loss exceeds threshold
+                if profit_percent <= -self.blacklist_threshold:
+                    self.add_to_blacklist(
+                        token_address, 
+                        abs(profit_percent), 
+                        f"stop_loss_{abs(profit_percent):.1f}%"
+                    )
+                
                 mode = "REAL" if self.enable_real_trading else "SIM"
                 logger.info(f"💰 {mode} SOLD: {token_address[:8]} → ${profit_usdc/1_000_000:+.2f} ({profit_percent:+.2f}%)")
                 
@@ -843,12 +889,29 @@ class SolanaTradingBot:
             return False
     
     async def execute_trade(self, token_address: str) -> bool:
-        """Execute a trade for a token"""
+        """Execute a trade with strict duplicate prevention"""
         try:
-            # Check if we have room for more positions
+            # CRITICAL CHECK 1: Already have this position?
+            if token_address in self.active_positions:
+                logger.warning(f"🚫 DUPLICATE PREVENTED: Already have position in {token_address[:8]}")
+                return False
+            
+            # CRITICAL CHECK 2: Recently traded this token?
+            if token_address in self.recently_traded:
+                logger.warning(f"🚫 COOLDOWN ACTIVE: Recently traded {token_address[:8]}")
+                return False
+            
+            # CRITICAL CHECK 3: Is token blacklisted?
+            if token_address in self.token_blacklist:
+                logger.warning(f"🚫 BLACKLISTED TOKEN: Skipping {token_address[:8]}")
+                return False
+            
+            # CRITICAL CHECK 4: Room for more positions?
             if len(self.active_positions) >= self.max_positions:
                 logger.info(f"⏳ Max positions ({self.max_positions}) reached, skipping trade")
                 return False
+            
+            logger.info(f"🎯 EXECUTING NEW TRADE: {token_address[:8]} (Position {len(self.active_positions)+1}/{self.max_positions})")
             
             # Get quote for buying token with USDC
             quote = await self.get_jupiter_quote(
@@ -861,23 +924,28 @@ class SolanaTradingBot:
                 return False
             
             # Execute the swap
-            tx_id = await self.execute_jupiter_swap(quote)
+            tx_id = await self.execute_jupiter_swap_optimized(quote)
             if not tx_id:
                 return False
             
-            # Record the position
+            # Record the position with timestamp
             token_amount = int(quote["outAmount"])
             self.active_positions[token_address] = {
                 "entry_time": dt.now(),
                 "tx_id": tx_id,
                 "usdc_amount": self.trade_amount,
                 "token_amount": token_amount,
-                "entry_price": self.trade_amount / token_amount
+                "entry_price": self.trade_amount / token_amount,
+                "token_address": token_address  # Store for safety
             }
+            
+            # Add to recently traded cooldown
+            self.recently_traded.add(token_address)
             
             mode = "REAL" if self.enable_real_trading else "SIM"
             logger.info(f"🚀 {mode} BOUGHT: ${self.trade_amount/1_000_000} → {token_amount/1_000_000:.6f} {token_address[:8]}")
             logger.info(f"📊 Active positions: {len(self.active_positions)}/{self.max_positions}")
+            logger.info(f"🕒 Cooldown list: {len(self.recently_traded)} tokens")
             
             return True
             
@@ -886,14 +954,24 @@ class SolanaTradingBot:
             return False
     
     async def main_trading_loop(self):
-        """Main trading loop"""
-        logger.info("🔄 Starting main trading loop...")
+        """Main trading loop with proper diversification"""
+        logger.info("🔄 Starting main trading loop with diversification...")
+        
+        # Initialize cooldown tracking
+        last_cooldown_cleanup = time.time()
         
         loop_count = 0
         while True:
             try:
                 loop_count += 1
                 logger.info(f"🔍 Trading loop #{loop_count}")
+                
+                # Clean up cooldown every 15 minutes (allow re-trading)
+                if time.time() - last_cooldown_cleanup > 900:  # 15 minutes
+                    cooldown_size = len(self.recently_traded)
+                    self.recently_traded.clear()
+                    last_cooldown_cleanup = time.time()
+                    logger.info(f"🧹 Cleared {cooldown_size} tokens from cooldown - allowing re-trading")
                 
                 # Monitor existing positions FIRST
                 if self.active_positions:
@@ -903,34 +981,64 @@ class SolanaTradingBot:
                     logger.info("📊 No active positions to monitor")
                 
                 # Look for new trading opportunities
-                if len(self.active_positions) < self.max_positions:
-                    logger.info("🔍 Scanning for new trading opportunities...")
+                available_slots = self.max_positions - len(self.active_positions)
+                if available_slots > 0:
+                    logger.info(f"🔍 Scanning for new opportunities ({available_slots} slots available)...")
                     
                     # Discover new tokens
                     new_tokens = await self.discover_new_tokens()
                     
+                    if not new_tokens:
+                        logger.info("⏭️ No new tokens found this cycle")
+                    else:
+                        logger.info(f"🎯 Evaluating {len(new_tokens)} potential tokens...")
+                    
+                    trades_this_cycle = 0
+                    max_trades_per_cycle = min(2, available_slots)  # Limit to 2 trades per cycle
+                    
                     for token_address in new_tokens:
-                        # Skip if we already have this position
+                        if trades_this_cycle >= max_trades_per_cycle:
+                            logger.info(f"⏳ Max trades per cycle reached ({max_trades_per_cycle})")
+                            break
+                        
+                        # Triple-check for duplicates
                         if token_address in self.active_positions:
+                            logger.info(f"⏭️ Skipping {token_address[:8]} - active position exists")
+                            continue
+                        
+                        if token_address in self.recently_traded:
+                            logger.info(f"⏭️ Skipping {token_address[:8]} - in cooldown period")
+                            continue
+                        
+                        if token_address in self.token_blacklist:
+                            logger.info(f"⏭️ Skipping {token_address[:8]} - blacklisted")
                             continue
                         
                         # Check if token is safe
                         is_safe, confidence = await self.check_token_safety(token_address)
                         
                         if is_safe and confidence >= self.safety_threshold:
-                            logger.info(f"✅ Safe token found: {token_address[:8]} (confidence: {confidence:.2f})")
+                            logger.info(f"✅ NEW safe token found: {token_address[:8]} (confidence: {confidence:.2f})")
                             
                             # Execute trade
                             success = await self.execute_trade(token_address)
                             if success:
-                                break  # One trade per loop
+                                trades_this_cycle += 1
+                                logger.info(f"🎯 Trade {trades_this_cycle}/{max_trades_per_cycle} completed successfully")
+                                # Small delay between trades
+                                await asyncio.sleep(5)
+                            else:
+                                logger.warning(f"⚠️ Trade execution failed for {token_address[:8]}")
                         else:
                             logger.info(f"⚠️ Risky token skipped: {token_address[:8]} (confidence: {confidence:.2f})")
                 else:
                     logger.info(f"⏳ Max positions ({self.max_positions}) reached, monitoring only")
                 
+                # Status summary
+                logger.info(f"📊 Summary: {len(self.active_positions)}/{self.max_positions} positions, {len(self.recently_traded)} in cooldown, {len(self.token_blacklist)} blacklisted")
+                
                 # Wait before next iteration
-                await asyncio.sleep(30)  # 30 second intervals for faster monitoring
+                await asyncio.sleep(30)  # 30 second intervals
                 
             except KeyboardInterrupt:
                 logger.info("🛑 Bot stopped by user")
@@ -941,7 +1049,7 @@ class SolanaTradingBot:
     
     async def run(self):
         """Start the trading bot"""
-        logger.info("🚀 Starting Solana Trading Bot...")
+        logger.info("🚀 Starting Solana Trading Bot with Blacklist System...")
         
         if self.enable_real_trading:
             logger.warning("⚠️⚠️⚠️ REAL TRADING MODE ENABLED ⚠️⚠️⚠️")
@@ -969,6 +1077,7 @@ class SolanaTradingBot:
             logger.info(f"💰 Simulating trades with ${self.trade_amount/1_000_000} amounts")
         
         logger.info(f"🔍 Looking for NEW token opportunities...")
+        logger.info(f"🚫 Blacklist protection active for tokens with >{self.blacklist_threshold}% losses")
         
         # Start main trading loop
         await self.main_trading_loop()

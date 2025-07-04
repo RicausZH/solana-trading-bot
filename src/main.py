@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Solana Trading Bot - FIXED VERSION with Jupiter API Compatibility
+Solana Trading Bot - REAL TRADING VERSION
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet
 Uses direct Jupiter API calls + Real blockchain transactions
 Includes: Real Token Discovery, Advanced Fraud Detection, REAL Trading, Profit Taking
-Fixed: Jupiter v6 API compatibility, AMM detection, transaction handling
-Updated: 2025-07-04 - Fixed Jupiter shared accounts error
+Updated: 2025-07-04 - Working Free APIs, Jupiter v6 Fixes, AMM Compatibility
 """
 
 import os
@@ -183,47 +182,104 @@ class SolanaTradingBot:
             logger.error(f"❌ Error getting Jupiter quote: {e}")
             return None
     
-    async def execute_jupiter_swap(self, quote: Dict) -> Optional[str]:
-        """Execute swap via Jupiter API with smart AMM detection"""
+    def detect_amm_type(self, quote: Dict) -> str:
+        """Detect AMM type from quote data"""
         try:
-            # First attempt: Try with standard settings
-            result = await self._execute_swap_attempt(quote, use_shared_accounts=False, use_legacy=False)
-            if result:
-                return result
+            route_plan = quote.get('routePlan', [])
+            if not route_plan:
+                return 'unknown'
             
-            # Second attempt: Try with legacy transaction
-            logger.info("🔄 Retrying with legacy transaction...")
-            result = await self._execute_swap_attempt(quote, use_shared_accounts=False, use_legacy=True)
-            if result:
-                return result
+            # Check first route step
+            first_step = route_plan[0]
+            swap_info = first_step.get('swapInfo', {})
+            amm_key = swap_info.get('ammKey', '')
             
-            # Third attempt: Try minimal configuration
-            logger.info("🔄 Retrying with minimal configuration...")
-            result = await self._execute_swap_minimal(quote)
-            if result:
-                return result
+            # Simple heuristic based on AMM key patterns
+            if 'pump' in amm_key.lower():
+                return 'pump_fun'
+            elif len(route_plan) == 1 and 'raydium' in str(swap_info).lower():
+                return 'simple_amm'
+            else:
+                return 'complex_amm'
+                
+        except Exception as e:
+            logger.warning(f"Could not detect AMM type: {e}")
+            return 'unknown'
+    
+    async def execute_jupiter_swap_smart(self, quote: Dict) -> Optional[str]:
+        """Smart swap execution with automatic AMM detection and fallback"""
+        try:
+            amm_type = self.detect_amm_type(quote)
+            logger.info(f"🔍 Detected AMM type: {amm_type}")
             
-            logger.error("❌ All swap attempts failed")
+            # Try different configurations based on AMM type
+            configurations = []
+            
+            if amm_type == 'simple_amm' or amm_type == 'pump_fun':
+                # Simple AMMs - start with most compatible settings
+                configurations = [
+                    {
+                        "useSharedAccounts": False,
+                        "asLegacyTransaction": True,
+                        "computeUnitPriceMicroLamports": 1000
+                    },
+                    {
+                        "useSharedAccounts": False,
+                        "asLegacyTransaction": False,
+                        "computeUnitPriceMicroLamports": "auto"
+                    }
+                ]
+            else:
+                # Complex AMMs - try modern settings first
+                configurations = [
+                    {
+                        "useSharedAccounts": False,
+                        "asLegacyTransaction": False,
+                        "computeUnitPriceMicroLamports": "auto"
+                    },
+                    {
+                        "useSharedAccounts": False,
+                        "asLegacyTransaction": True,
+                        "computeUnitPriceMicroLamports": 1000
+                    },
+                    {
+                        "useSharedAccounts": True,
+                        "asLegacyTransaction": False,
+                        "computeUnitPriceMicroLamports": "auto"
+                    }
+                ]
+            
+            # Try each configuration
+            for i, config in enumerate(configurations):
+                logger.info(f"🔄 Trying configuration {i+1}/{len(configurations)}: {config}")
+                
+                result = await self.execute_jupiter_swap_with_config(quote, config)
+                if result:
+                    logger.info(f"✅ Success with configuration {i+1}")
+                    return result
+                
+                if i < len(configurations) - 1:
+                    logger.info(f"⏳ Configuration {i+1} failed, trying next...")
+                    await asyncio.sleep(1)  # Brief pause between attempts
+            
+            logger.error("❌ All swap configurations failed")
             return None
             
         except Exception as e:
-            logger.error(f"❌ Error executing Jupiter swap: {e}")
+            logger.error(f"❌ Error in smart swap execution: {e}")
             return None
     
-    async def _execute_swap_attempt(self, quote: Dict, use_shared_accounts: bool = False, use_legacy: bool = False) -> Optional[str]:
-        """Execute a swap attempt with specified parameters"""
+    async def execute_jupiter_swap_with_config(self, quote: Dict, config: Dict) -> Optional[str]:
+        """Execute swap with specific configuration"""
         try:
+            # Build swap data with configuration
             swap_data = {
                 "quoteResponse": quote,
                 "userPublicKey": self.public_key,
                 "wrapAndUnwrapSol": True,
-                "useSharedAccounts": use_shared_accounts,
-                "asLegacyTransaction": use_legacy
+                "feeAccount": None,
+                **config  # Merge in the configuration
             }
-            
-            # Add compute unit price if not using legacy
-            if not use_legacy:
-                swap_data["computeUnitPriceMicroLamports"] = "auto"
             
             headers = {
                 "Content-Type": "application/json",
@@ -243,15 +299,14 @@ class SolanaTradingBot:
                         
                         if transaction_data:
                             if self.enable_real_trading:
-                                # REAL TRADING
-                                if use_legacy:
+                                # REAL TRADING - choose transaction type based on config
+                                if config.get("asLegacyTransaction", False):
                                     tx_id = await self.send_real_transaction_legacy(transaction_data)
                                 else:
                                     tx_id = await self.send_real_transaction(transaction_data)
-                                    
+                                
                                 if tx_id:
-                                    mode = "LEGACY" if use_legacy else "VERSIONED"
-                                    logger.info(f"✅ REAL SWAP EXECUTED ({mode}): {tx_id}")
+                                    logger.info(f"✅ REAL SWAP EXECUTED: {tx_id}")
                                     logger.info(f"🔗 View: https://explorer.solana.com/tx/{tx_id}")
                                     return tx_id
                                 else:
@@ -259,86 +314,32 @@ class SolanaTradingBot:
                                     return None
                             else:
                                 # SIMULATION MODE
-                                mode = "legacy" if use_legacy else "versioned"
-                                tx_id = f"sim_{mode}_{int(time.time())}"
-                                logger.info(f"✅ SIMULATED swap ({mode}): {tx_id}")
-                                logger.info("💡 To enable real trading: Set ENABLE_REAL_TRADING=true")
+                                tx_id = f"sim_{int(time.time())}"
+                                config_type = "legacy" if config.get("asLegacyTransaction", False) else "versioned"
+                                logger.info(f"✅ SIMULATED swap ({config_type}): {tx_id}")
                                 return tx_id
                         else:
                             logger.error("❌ No transaction data in swap response")
                             return None
                     else:
                         error_text = await response.text()
-                        if response.status == 400:
-                            error_data = json.loads(error_text) if error_text else {}
-                            error_code = error_data.get("errorCode", "UNKNOWN")
-                            logger.warning(f"⚠️ Jupiter swap failed ({error_code}): {error_text}")
-                        else:
-                            logger.error(f"❌ Jupiter swap failed: {response.status} - {error_text}")
+                        logger.warning(f"⚠️ Jupiter swap failed with this config: {response.status} - {error_text}")
                         return None
                         
         except Exception as e:
-            logger.error(f"❌ Error in swap attempt: {e}")
+            logger.warning(f"⚠️ Error with this configuration: {e}")
             return None
     
-    async def _execute_swap_minimal(self, quote: Dict) -> Optional[str]:
-        """Execute swap with minimal configuration for maximum compatibility"""
-        try:
-            swap_data = {
-                "quoteResponse": quote,
-                "userPublicKey": self.public_key,
-                "wrapAndUnwrapSol": False,  # Disable wrap/unwrap
-                "useSharedAccounts": False,
-                "asLegacyTransaction": True,
-                "computeUnitPriceMicroLamports": 1000  # Fixed price
-            }
-            
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.jupiter_swap_url, 
-                    json=swap_data, 
-                    headers=headers,
-                    timeout=30
-                ) as response:
-                    if response.status == 200:
-                        swap_response = await response.json()
-                        transaction_data = swap_response.get("swapTransaction")
-                        
-                        if transaction_data:
-                            if self.enable_real_trading:
-                                tx_id = await self.send_real_transaction_legacy(transaction_data)
-                                if tx_id:
-                                    logger.info(f"✅ REAL SWAP EXECUTED (minimal): {tx_id}")
-                                    return tx_id
-                                else:
-                                    logger.error("❌ Failed to send real transaction (minimal)")
-                                    return None
-                            else:
-                                tx_id = f"sim_minimal_{int(time.time())}"
-                                logger.info(f"✅ SIMULATED swap (minimal): {tx_id}")
-                                return tx_id
-                        else:
-                            logger.error("❌ No transaction data in minimal swap response")
-                            return None
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"❌ Jupiter minimal swap failed: {response.status} - {error_text}")
-                        return None
-                        
-        except Exception as e:
-            logger.error(f"❌ Error in minimal swap: {e}")
-            return None
+    async def execute_jupiter_swap(self, quote: Dict) -> Optional[str]:
+        """Execute swap via Jupiter API - REAL OR SIMULATION"""
+        return await self.execute_jupiter_swap_smart(quote)
     
     async def send_real_transaction(self, transaction_data: str) -> Optional[str]:
-        """Send real transaction to Solana blockchain (versioned)"""
+        """Send real transaction to Solana blockchain (Versioned)"""
         try:
-            logger.warning("⚠️ SENDING REAL TRANSACTION WITH REAL MONEY (VERSIONED)")
+            logger.warning("⚠️ SENDING REAL VERSIONED TRANSACTION WITH REAL MONEY")
             
+            # Import required modules
             from solana.rpc.async_api import AsyncClient
             from solders.keypair import Keypair
             from solders.transaction import VersionedTransaction
@@ -367,7 +368,7 @@ class SolanaTradingBot:
             result = await client.send_transaction(signed_tx, opts)
             
             if result.value:
-                logger.info(f"✅ REAL TRANSACTION SENT (VERSIONED): {result.value}")
+                logger.info(f"✅ REAL VERSIONED TRANSACTION SENT: {result.value}")
                 return str(result.value)
             else:
                 logger.error("❌ Versioned transaction failed")
@@ -380,7 +381,7 @@ class SolanaTradingBot:
     async def send_real_transaction_legacy(self, transaction_data: str) -> Optional[str]:
         """Send real transaction using legacy format"""
         try:
-            logger.warning("⚠️ SENDING REAL TRANSACTION WITH REAL MONEY (LEGACY)")
+            logger.warning("⚠️ SENDING REAL LEGACY TRANSACTION WITH REAL MONEY")
             
             from solana.rpc.async_api import AsyncClient
             from solana.transaction import Transaction
@@ -410,7 +411,7 @@ class SolanaTradingBot:
             result = await client.send_transaction(transaction, opts)
             
             if result.value:
-                logger.info(f"✅ REAL TRANSACTION SENT (LEGACY): {result.value}")
+                logger.info(f"✅ REAL LEGACY TRANSACTION SENT: {result.value}")
                 return str(result.value)
             else:
                 logger.error("❌ Legacy transaction failed")
@@ -427,36 +428,36 @@ class SolanaTradingBot:
             if token_address == self.sol_mint:
                 logger.info(f"⏭️ Skipping SOL - looking for new tokens only")
                 return False, 0.5
-        
+            
             logger.info(f"🔍 Analyzing token safety: {token_address}")
-        
+            
             # Try to use fraud detector with proper error handling
             try:
                 # Import here to avoid import errors at startup
                 import sys
                 import os
                 sys.path.append(os.path.dirname(__file__))
-            
+                
                 from fraud_detector import FraudDetector
                 from config import Config
-            
+                
                 config = Config()
                 fraud_detector = FraudDetector(config)
-            
+                
                 # Use async context manager properly
                 async with fraud_detector:
                     is_safe, analysis_report = await fraud_detector.analyze_token_safety(token_address)
                     confidence = analysis_report.get('safety_score', 0.0)
-                
-                logger.info(f"✅ Advanced fraud detection completed: {confidence:.2f}")
+                    
+                    logger.info(f"✅ Advanced fraud detection completed: {confidence:.2f}")
                     return is_safe, confidence
-                
+                    
             except Exception as import_error:
                 # Log the specific import error for debugging
                 logger.warning(f"⚠️ Fraud detector import failed: {import_error}")
                 logger.info("🔄 Falling back to simplified analysis")
                 return await self.simplified_safety_check(token_address)
-        
+            
         except Exception as e:
             logger.error(f"❌ Error in safety analysis: {e}")
             return False, 0.0

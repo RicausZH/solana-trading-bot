@@ -1,10 +1,9 @@
-#!/usr/bin/env python3sd
+#!/usr/bin/env python3
 """
-Solana Trading Bot - ENHANCED VERSION WITH FALLBACK ENDPOINTS
+Solana Trading Bot - PHASE 1 PUMPPORTAL INTEGRATION
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet when enabled
-Features: New Token Detection, Token Blacklist, Advanced Fraud Detection, Optimized Trading
-Enhanced: Multiple fallback endpoints for robust API error handling
-Updated: 2025-07-04 - Fixed Brotli and Raydium parsing issues
+Features: New Token Detection, PumpPortal Fallback, Token Blacklist, Advanced Fraud Detection, Optimized Trading
+Updated: 2025-07-04 - Phase 1 Safe PumpPortal Integration
 """
 
 import os
@@ -82,7 +81,7 @@ class SolanaTradingBot:
         self.load_blacklist()
         
         # Log configuration
-        logger.info("🤖 Solana Trading Bot initialized with ALL environment variables")
+        logger.info("🤖 Solana Trading Bot initialized with Phase 1 PumpPortal Integration")
         logger.info(f"💰 Trade Amount: ${self.trade_amount/1_000_000}")
         logger.info(f"🎯 Profit Target: {self.profit_target}%")
         logger.info(f"🛑 Stop Loss: {self.stop_loss_percent}%")
@@ -92,6 +91,7 @@ class SolanaTradingBot:
         logger.info(f"📈 Min Volume 24h: ${self.min_volume_24h:,.0f}")
         logger.info(f"🚫 Blacklist threshold: {self.blacklist_threshold}%")
         logger.info(f"🚫 Blacklisted tokens: {len(self.token_blacklist)}")
+        logger.info("🔄 Phase 1: PumpPortal fallback system enabled")
         
         if self.enable_real_trading:
             logger.warning("⚠️ REAL TRADING ENABLED - WILL USE REAL MONEY!")
@@ -541,234 +541,414 @@ class SolanaTradingBot:
             logger.warning(f"⚠️ Pattern analysis error: {e}")
             return 0.50
 
-    async def pumpfun_discovery(self) -> List[str]:
-        """Enhanced Pump.fun discovery with simple fallback endpoints"""
+    # ==================== PHASE 1 ENHANCED DISCOVERY METHODS ====================
+    
+    async def pumpportal_discovery(self) -> List[str]:
+        """PumpPortal.fun API discovery - PHASE 1 SAFE FALLBACK"""
         try:
-            # Simple fallback endpoints - keeping exact working headers
+            # PumpPortal endpoints (more reliable than official pump.fun)
             endpoints = [
-                "https://frontend-api.pump.fun/coins",  # Your working endpoint first
-                "https://api.pump.fun/coins/latest",
-                "https://pump.fun/api/coins",
                 "https://pumpportal.fun/api/coins",
-                "https://frontend-api.pump.fun/coins/king-of-the-hill"
+                "https://pumpportal.fun/api/data/coins", 
+                "https://pumpportal.fun/api/tokens/latest",
+                "https://pumpportal.fun/api/pump/latest"
             ]
+            
+            # Same simple headers as your working code
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
             
             for i, url in enumerate(endpoints):
                 try:
-                    logger.info(f"📍 Trying Pump.fun endpoint {i+1}/{len(endpoints)}: {url}")
-                    
-                    # Your exact working parameters and headers
-                    params = {
-                        "offset": 0,
-                        "limit": 50,
-                        "sort": "created_timestamp",
-                        "order": "DESC"
-                    }
-                    
-                    # Exact same simple headers that work
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'application/json'
-                    }
-                    
-                    if i > 0:
-                        await asyncio.sleep(1)  # Simple delay
-                    
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(url, params=params, headers=headers, timeout=15) as response:
-                            logger.info(f"🔍 Pump.fun endpoint {i+1} response: {response.status}")
-                            
-                            if response.status == 200:
-                                data = await response.json()
-                                tokens = []
-                                current_time = time.time()
-                                
-                                # Your exact working parsing logic
-                                coins = data if isinstance(data, list) else data.get('coins', [])
-                                
-                                for coin in coins[:30]:
-                                    created_timestamp = (
-                                        coin.get("created_timestamp") or 
-                                        coin.get("createdAt") or 
-                                        coin.get("timestamp")
-                                    )
-                                    
-                                    if not created_timestamp:
-                                        continue
-                                    
-                                    try:
-                                        if isinstance(created_timestamp, str):
-                                            created_time = datetime.datetime.fromisoformat(created_timestamp.replace('Z', '+00:00')).timestamp()
-                                        else:
-                                            created_time = float(created_timestamp)
-                                            if created_time > 10**12:
-                                                created_time = created_time / 1000
-                                    except:
-                                        continue
-                                    
-                                    hours_old = (current_time - created_time) / 3600
-                                    if hours_old > 6:
-                                        continue
-                                    
-                                    mint_address = coin.get("mint") or coin.get("address") or coin.get("token")
-                                    if mint_address and len(mint_address) == 44:
-                                        tokens.append(mint_address)
-                                        logger.info(f"📍 Pump.fun NEW token: {mint_address[:8]} (age: {hours_old:.1f}h)")
-                                
-                                if tokens:
-                                    logger.info(f"✅ Pump.fun endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
-                                    return tokens[:10]
-                                else:
-                                    logger.warning(f"⚠️ Pump.fun endpoint {i+1} returned no valid tokens")
-                                    continue
-                                    
-                            elif response.status == 530:
-                                logger.warning(f"⚠️ Pump.fun endpoint {i+1} server unavailable (530), trying next...")
-                                continue
-                            elif response.status == 404:
-                                logger.warning(f"⚠️ Pump.fun endpoint {i+1} not found (404), trying next...")
-                                continue
-                            elif response.status == 429:
-                                logger.warning(f"⚠️ Pump.fun endpoint {i+1} rate limited (429), waiting...")
-                                await asyncio.sleep(30)
-                                continue
-                            else:
-                                logger.warning(f"⚠️ Pump.fun endpoint {i+1} status: {response.status}")
-                                continue
-                                
-                except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ Pump.fun endpoint {i+1} timeout, trying next...")
-                    continue
-                except Exception as e:
-                    logger.warning(f"⚠️ Pump.fun endpoint {i+1} error: {e}")
-                    continue
-            
-            logger.warning("⚠️ All Pump.fun endpoints failed - no tokens discovered")
-            return []
-            
-        except Exception as e:
-            logger.error(f"❌ Pump.fun discovery error: {e}")
-            return []
-
-    async def dexscreener_discovery(self) -> List[str]:
-        """Enhanced DexScreener discovery with simple fallback endpoints"""
-        try:
-            # Simple fallback endpoints - no complex headers to avoid Brotli issues
-            endpoints = [
-                "https://api.dexscreener.com/latest/dex/pairs/solana",  # Your working endpoint first
-                "https://api.dexscreener.com/v1/dex/pairs/solana",
-                "https://api.dexscreener.com/latest/dex/search?q=solana&limit=100",
-                "https://api.dexscreener.io/latest/dex/pairs/solana",
-                "https://dexscreener.com/api/latest/dex/pairs/solana"
-            ]
-            
-            for i, url in enumerate(endpoints):
-                try:
-                    logger.info(f"📍 Trying DexScreener endpoint {i+1}/{len(endpoints)}: {url}")
-                    
-                    # Exact same simple headers that work - no complex compression
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'application/json'
-                    }
-                    
-                    if i > 0:
-                        await asyncio.sleep(2)  # Simple delay
+                    logger.info(f"📍 Trying PumpPortal endpoint {i+1}/{len(endpoints)}: {url}")
                     
                     async with aiohttp.ClientSession() as session:
                         async with session.get(url, headers=headers, timeout=15) as response:
-                            logger.info(f"🔍 DexScreener endpoint {i+1} response: {response.status}")
-                            
                             if response.status == 200:
                                 data = await response.json()
-                                tokens = []
-                                current_time = time.time()
-                                
-                                # Your exact working parsing logic
-                                pairs = data.get("pairs", [])
-                                if not pairs:
-                                    logger.warning(f"⚠️ DexScreener endpoint {i+1} returned no pairs")
-                                    continue
-                                
-                                for pair in pairs[:100]:
-                                    created_at = (
-                                        pair.get("pairCreatedAt") or 
-                                        pair.get("createdAt") or
-                                        pair.get("firstSeenAt")
-                                    )
-                                    
-                                    if created_at:
-                                        try:
-                                            if isinstance(created_at, str):
-                                                created_timestamp = datetime.datetime.fromisoformat(created_at.replace('Z', '+00:00')).timestamp()
-                                            else:
-                                                created_timestamp = float(created_at)
-                                                if created_timestamp > 10**12:
-                                                    created_timestamp = created_timestamp / 1000
-                                            
-                                            hours_old = (current_time - created_timestamp) / 3600
-                                            if hours_old > 24:
-                                                continue
-                                            
-                                        except:
-                                            continue
-                                    else:
-                                        continue
-                                    
-                                    base_token = pair.get("baseToken", {})
-                                    quote_token = pair.get("quoteToken", {})
-                                    
-                                    base_address = base_token.get("address")
-                                    quote_address = quote_token.get("address")
-                                    
-                                    if quote_address in [self.sol_mint, self.usdc_mint] and base_address:
-                                        liquidity = pair.get("liquidity", {}).get("usd", 0)
-                                        if liquidity and float(liquidity) > 1000:
-                                            tokens.append(base_address)
-                                            logger.info(f"📍 DexScreener NEW: {base_address[:8]} (age: {hours_old:.1f}h, liq: ${float(liquidity):,.0f})")
-                                
+                                tokens = self._parse_pumpportal_response(data)
                                 if tokens:
-                                    logger.info(f"✅ DexScreener endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
+                                    logger.info(f"✅ PumpPortal endpoint {i+1} SUCCESS: {len(tokens)} tokens")
+                                    return tokens[:10]
+                                else:
+                                    logger.warning(f"⚠️ PumpPortal endpoint {i+1} returned no valid tokens")
+                                    continue
+                            else:
+                                logger.warning(f"⚠️ PumpPortal endpoint {i+1} error: {response.status}")
+                                continue
+                except Exception as e:
+                    logger.warning(f"⚠️ PumpPortal endpoint {i+1} failed: {e}")
+                    continue
+            
+            logger.warning("⚠️ All PumpPortal endpoints failed")
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ PumpPortal discovery error: {e}")
+            return []
+
+    def _parse_pumpportal_response(self, data) -> List[str]:
+        """Parse PumpPortal response with fallback to existing logic"""
+        try:
+            # Handle different response formats (PumpPortal vs Pump.fun)
+            coins = (
+                data.get('tokens', []) or      # PumpPortal format
+                data.get('coins', []) or       # Pump.fun format  
+                data.get('data', []) or        # Alternative format
+                (data if isinstance(data, list) else [])  # Direct array
+            )
+            
+            # Your existing parsing logic (unchanged)
+            tokens = []
+            current_time = time.time()
+            
+            for coin in coins[:30]:
+                try:
+                    # Your exact same timestamp parsing logic
+                    created_timestamp = (
+                        coin.get("created_timestamp") or 
+                        coin.get("createdAt") or 
+                        coin.get("timestamp") or
+                        coin.get("created")
+                    )
+                    
+                    if not created_timestamp:
+                        continue
+                    
+                    try:
+                        if isinstance(created_timestamp, str):
+                            created_time = datetime.datetime.fromisoformat(created_timestamp.replace('Z', '+00:00')).timestamp()
+                        else:
+                            created_time = float(created_timestamp)
+                            if created_time > 10**12:
+                                created_time = created_time / 1000
+                    except:
+                        continue
+                    
+                    hours_old = (current_time - created_time) / 3600
+                    if hours_old > 6:
+                        continue
+                    
+                    # Your exact same mint address extraction
+                    mint_address = coin.get("mint") or coin.get("address") or coin.get("token")
+                    if mint_address and len(mint_address) == 44:
+                        tokens.append(mint_address)
+                        token_name = coin.get("name", "Unknown")
+                        logger.info(f"📍 PumpPortal NEW: {token_name} - {mint_address[:8]} (age: {hours_old:.1f}h)")
+                        
+                except Exception as e:
+                    logger.debug(f"Error parsing PumpPortal coin: {e}")
+                    continue
+            
+            return tokens
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing PumpPortal response: {e}")
+            return []
+
+    async def _try_original_pumpfun(self) -> List[str]:
+        """Your original working pump.fun method"""
+        try:
+            url = "https://frontend-api.pump.fun/coins"
+            params = {
+                "offset": 0,
+                "limit": 50,
+                "sort": "created_timestamp",
+                "order": "DESC"
+            }
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, headers=headers, timeout=15) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        tokens = []
+                        current_time = time.time()
+                        
+                        coins = data if isinstance(data, list) else data.get('coins', [])
+                        
+                        for coin in coins[:30]:
+                            created_timestamp = (
+                                coin.get("created_timestamp") or 
+                                coin.get("createdAt") or 
+                                coin.get("timestamp")
+                            )
+                            
+                            if not created_timestamp:
+                                continue
+                            
+                            try:
+                                if isinstance(created_timestamp, str):
+                                    created_time = datetime.datetime.fromisoformat(created_timestamp.replace('Z', '+00:00')).timestamp()
+                                else:
+                                    created_time = float(created_timestamp)
+                                    if created_time > 10**12:
+                                        created_time = created_time / 1000
+                            except:
+                                continue
+                            
+                            hours_old = (current_time - created_time) / 3600
+                            if hours_old > 6:
+                                continue
+                            
+                            mint_address = coin.get("mint") or coin.get("address") or coin.get("token")
+                            if mint_address and len(mint_address) == 44:
+                                tokens.append(mint_address)
+                                logger.info(f"📍 Original Pump.fun: {mint_address[:8]} (age: {hours_old:.1f}h)")
+                        
+                        return tokens[:10]
+                    else:
+                        logger.warning(f"⚠️ Original Pump.fun API error: {response.status}")
+                        return []
+                        
+        except Exception as e:
+            logger.warning(f"⚠️ Original Pump.fun error: {e}")
+            return []
+
+    async def _try_pumpfun_backup_endpoints(self) -> List[str]:
+        """Try backup pump.fun endpoints"""
+        try:
+            backup_endpoints = [
+                "https://api.pump.fun/coins/latest",
+                "https://pump.fun/api/coins",
+                "https://api.pump.fun/v1/coins"
+            ]
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            
+            for i, url in enumerate(backup_endpoints):
+                try:
+                    logger.info(f"📍 Trying backup Pump.fun endpoint {i+1}/{len(backup_endpoints)}")
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, headers=headers, timeout=15) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                # Use same parsing logic as original
+                                tokens = self._parse_pumpfun_backup_response(data)
+                                if tokens:
+                                    logger.info(f"✅ Backup endpoint {i+1} SUCCESS: {len(tokens)} tokens")
+                                    return tokens[:10]
+                            else:
+                                logger.warning(f"⚠️ Backup endpoint {i+1} error: {response.status}")
+                                continue
+                except Exception as e:
+                    logger.warning(f"⚠️ Backup endpoint {i+1} failed: {e}")
+                    continue
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ Backup endpoints error: {e}")
+            return []
+
+    def _parse_pumpfun_backup_response(self, data) -> List[str]:
+        """Parse backup pump.fun responses"""
+        try:
+            # Same logic as original parsing
+            coins = data if isinstance(data, list) else data.get('coins', data.get('data', []))
+            tokens = []
+            current_time = time.time()
+            
+            for coin in coins[:30]:
+                try:
+                    created_timestamp = coin.get("created_timestamp") or coin.get("createdAt") or coin.get("timestamp")
+                    if not created_timestamp:
+                        continue
+                    
+                    try:
+                        if isinstance(created_timestamp, str):
+                            created_time = datetime.datetime.fromisoformat(created_timestamp.replace('Z', '+00:00')).timestamp()
+                        else:
+                            created_time = float(created_timestamp)
+                            if created_time > 10**12:
+                                created_time = created_time / 1000
+                    except:
+                        continue
+                    
+                    hours_old = (current_time - created_time) / 3600
+                    if hours_old > 6:
+                        continue
+                    
+                    mint_address = coin.get("mint") or coin.get("address") or coin.get("token")
+                    if mint_address and len(mint_address) == 44:
+                        tokens.append(mint_address)
+                        logger.info(f"📍 Backup Pump.fun: {mint_address[:8]} (age: {hours_old:.1f}h)")
+                        
+                except Exception as e:
+                    continue
+            
+            return tokens
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing backup response: {e}")
+            return []
+
+    async def pumpfun_discovery(self) -> List[str]:
+        """Enhanced Pump.fun discovery with PumpPortal fallback - PHASE 1 SAFE INTEGRATION"""
+        try:
+            logger.info("📍 Phase 1 Pump.fun Discovery")
+            
+            # Method 1: Your original working endpoint (PRIMARY)
+            logger.info("📍 Trying original Pump.fun endpoint...")
+            tokens = await self._try_original_pumpfun()
+            if tokens:
+                logger.info(f"✅ Original Pump.fun SUCCESS: {len(tokens)} tokens")
+                return tokens
+            
+            # Method 2: PumpPortal fallback (SAFE FALLBACK)
+            logger.info("🔄 Original failed, trying PumpPortal fallback...")
+            tokens = await self.pumpportal_discovery()
+            if tokens:
+                logger.info(f"✅ PumpPortal fallback SUCCESS: {len(tokens)} tokens")
+                return tokens
+            
+            # Method 3: Backup pump.fun endpoints (ADDITIONAL FALLBACKS)
+            logger.info("🔄 PumpPortal failed, trying backup Pump.fun endpoints...")
+            tokens = await self._try_pumpfun_backup_endpoints()
+            if tokens:
+                logger.info(f"✅ Backup Pump.fun SUCCESS: {len(tokens)} tokens")
+                return tokens
+            
+            logger.warning("⚠️ All Pump.fun methods failed")
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced Pump.fun discovery error: {e}")
+            return []
+
+    async def dexscreener_discovery(self) -> List[str]:
+        """Enhanced DexScreener discovery with multiple endpoints - PHASE 1"""
+        try:
+            logger.info("📍 Phase 1 DexScreener Discovery")
+            
+            # Multiple endpoints to handle different issues
+            endpoints = [
+                "https://api.dexscreener.com/latest/dex/pairs/solana",      # Your working endpoint
+                "https://api.dexscreener.com/v1/dex/pairs/solana",          # Alternative version
+                "https://api.dexscreener.io/latest/dex/pairs/solana",       # Alternative domain
+                "https://dexscreener.com/api/latest/dex/pairs/solana"       # Direct domain
+            ]
+            
+            # Simple headers (your working approach)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            
+            for i, url in enumerate(endpoints):
+                try:
+                    logger.info(f"📍 Trying DexScreener endpoint {i+1}/{len(endpoints)}")
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, headers=headers, timeout=15) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                tokens = self._parse_dexscreener_response(data)
+                                if tokens:
+                                    logger.info(f"✅ DexScreener endpoint {i+1} SUCCESS: {len(tokens)} tokens")
                                     return tokens[:15]
                                 else:
                                     logger.warning(f"⚠️ DexScreener endpoint {i+1} returned no valid tokens")
                                     continue
-                                    
-                            elif response.status == 404:
-                                logger.warning(f"⚠️ DexScreener endpoint {i+1} not found (404), trying next...")
-                                continue
-                            elif response.status == 429:
-                                logger.warning(f"⚠️ DexScreener endpoint {i+1} rate limited (429), waiting...")
-                                await asyncio.sleep(60)
-                                continue
                             else:
-                                logger.warning(f"⚠️ DexScreener endpoint {i+1} status: {response.status}")
+                                error_msg = "Brotli compression" if response.status == 400 else f"status {response.status}"
+                                logger.warning(f"⚠️ DexScreener endpoint {i+1} error: {error_msg}, trying next...")
                                 continue
                                 
-                except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ DexScreener endpoint {i+1} timeout, trying next...")
-                    continue
                 except Exception as e:
-                    logger.warning(f"⚠️ DexScreener endpoint {i+1} error: {e}")
+                    if "brotli" in str(e).lower():
+                        logger.warning(f"⚠️ DexScreener endpoint {i+1} compression error, trying next...")
+                    else:
+                        logger.warning(f"⚠️ DexScreener endpoint {i+1} failed: {e}")
                     continue
             
-            logger.warning("⚠️ All DexScreener endpoints failed - no tokens discovered")
+            logger.warning("⚠️ All DexScreener endpoints failed")
             return []
             
         except Exception as e:
             logger.error(f"❌ DexScreener discovery error: {e}")
             return []
 
-    async def raydium_discovery(self) -> List[str]:
-        """Enhanced Raydium discovery with simple fallback endpoints and fixed parsing"""
+    def _parse_dexscreener_response(self, data) -> List[str]:
+        """Parse DexScreener response - your existing logic"""
         try:
-            # Simple fallback endpoints
+            tokens = []
+            current_time = time.time()
+            
+            pairs = data.get("pairs", [])
+            if not pairs:
+                logger.warning("⚠️ DexScreener returned no pairs")
+                return []
+            
+            for pair in pairs[:100]:
+                try:
+                    created_at = (
+                        pair.get("pairCreatedAt") or 
+                        pair.get("createdAt") or
+                        pair.get("firstSeenAt")
+                    )
+                    
+                    if created_at:
+                        try:
+                            if isinstance(created_at, str):
+                                created_timestamp = datetime.datetime.fromisoformat(created_at.replace('Z', '+00:00')).timestamp()
+                            else:
+                                created_timestamp = float(created_at)
+                                if created_timestamp > 10**12:
+                                    created_timestamp = created_timestamp / 1000
+                            
+                            hours_old = (current_time - created_timestamp) / 3600
+                            if hours_old > 24:
+                                continue
+                            
+                        except:
+                            continue
+                    else:
+                        continue
+                    
+                    base_token = pair.get("baseToken", {})
+                    quote_token = pair.get("quoteToken", {})
+                    
+                    base_address = base_token.get("address")
+                    quote_address = quote_token.get("address")
+                    
+                    if quote_address in [self.sol_mint, self.usdc_mint] and base_address:
+                        liquidity = pair.get("liquidity", {}).get("usd", 0)
+                        if liquidity and float(liquidity) > 1000:
+                            tokens.append(base_address)
+                            logger.info(f"📍 DexScreener NEW: {base_address[:8]} (age: {hours_old:.1f}h, liq: ${float(liquidity):,.0f})")
+                            
+                except Exception as e:
+                    continue
+            
+            return tokens
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing DexScreener response: {e}")
+            return []
+
+    async def raydium_discovery(self) -> List[str]:
+        """Enhanced Raydium discovery with better error handling - PHASE 1"""
+        try:
+            logger.info("📍 Phase 1 Raydium Discovery")
+            
+            # Multiple Raydium endpoints
             endpoints = [
                 {
-                    "url": "https://api-v3.raydium.io/pools/info/list",  # Your working endpoint first
+                    "url": "https://api-v3.raydium.io/pools/info/list",
                     "params": {
                         "poolType": "all",
-                        "poolSortField": "default",
+                        "poolSortField": "default", 
                         "sortType": "desc",
                         "pageSize": 50,
                         "page": 1
@@ -779,109 +959,42 @@ class SolanaTradingBot:
                     "params": {}
                 },
                 {
-                    "url": "https://api.raydium.io/v2/pairs",
+                    "url": "https://api.raydium.io/v2/pairs", 
                     "params": {}
                 }
             ]
             
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            
             for i, endpoint in enumerate(endpoints):
                 try:
-                    logger.info(f"📍 Trying Raydium endpoint {i+1}/{len(endpoints)}: {endpoint['url']}")
-                    
-                    # Exact same simple headers that work
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'application/json'
-                    }
-                    
-                    if i > 0:
-                        await asyncio.sleep(1)
+                    logger.info(f"📍 Trying Raydium endpoint {i+1}/{len(endpoints)}")
                     
                     async with aiohttp.ClientSession() as session:
                         async with session.get(
                             endpoint["url"], 
-                            params=endpoint.get("params", {}), 
+                            params=endpoint["params"], 
                             headers=headers, 
                             timeout=15
                         ) as response:
-                            logger.info(f"🔍 Raydium endpoint {i+1} response: {response.status}")
-                            
                             if response.status == 200:
                                 data = await response.json()
-                                tokens = []
-                                
-                                # FIXED: Handle different response formats properly
-                                if i == 0:  # First endpoint (your working one)
-                                    if not data.get("success"):
-                                        logger.warning(f"⚠️ Raydium endpoint {i+1} returned unsuccessful response")
-                                        continue
-                                    
-                                    pool_data = data.get("data", {})
-                                    pools = pool_data.get("data", []) if isinstance(pool_data, dict) else pool_data
-                                    
-                                else:  # Other endpoints - handle list responses
-                                    if isinstance(data, list):
-                                        pools = data
-                                    else:
-                                        pools = data.get("data", data.get("pairs", []))
-                                
-                                if not pools:
-                                    logger.warning(f"⚠️ Raydium endpoint {i+1} returned no pools")
-                                    continue
-                                
-                                logger.info(f"📊 Raydium endpoint {i+1} returned {len(pools)} pairs")
-                                
-                                # Parse pools with your exact working logic
-                                for pool in pools[:30]:
-                                    if i == 0:  # Your working endpoint logic
-                                        tvl = pool.get("tvl", 0)
-                                        
-                                        if not (1000 < float(tvl or 0) < 1000000):
-                                            continue
-                                        
-                                        mint_a = pool.get("mintA", {}).get("address")
-                                        mint_b = pool.get("mintB", {}).get("address")
-                                        
-                                        new_token = None
-                                        if mint_a in [self.sol_mint, self.usdc_mint]:
-                                            if mint_b and mint_b not in [self.sol_mint, self.usdc_mint]:
-                                                new_token = mint_b
-                                        elif mint_b in [self.sol_mint, self.usdc_mint]:
-                                            if mint_a and mint_a not in [self.sol_mint, self.usdc_mint]:
-                                                new_token = mint_a
-                                        
-                                        if new_token:
-                                            tokens.append(new_token)
-                                            logger.info(f"📍 Raydium pool: {new_token[:8]} (TVL: ${float(tvl or 0):,.0f})")
-                                    
-                                    else:  # Other endpoints - simplified parsing
-                                        base_mint = pool.get("baseMint") or pool.get("tokenA")
-                                        quote_mint = pool.get("quoteMint") or pool.get("tokenB")
-                                        
-                                        if quote_mint in [self.sol_mint, self.usdc_mint] and base_mint:
-                                            if base_mint not in [self.sol_mint, self.usdc_mint]:
-                                                tokens.append(base_mint)
-                                                logger.info(f"📍 Raydium pair: {base_mint[:8]}")
-                                
+                                tokens = self._parse_raydium_response(data, i+1)
                                 if tokens:
-                                    logger.info(f"✅ Raydium endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
+                                    logger.info(f"✅ Raydium endpoint {i+1} SUCCESS: {len(tokens)} tokens")
                                     return tokens[:15]
                                 else:
                                     logger.warning(f"⚠️ Raydium endpoint {i+1} returned no valid tokens")
                                     continue
-                                    
-                            elif response.status == 404:
-                                logger.warning(f"⚠️ Raydium endpoint {i+1} not found (404), trying next...")
-                                continue
                             else:
-                                logger.warning(f"⚠️ Raydium endpoint {i+1} status: {response.status}")
+                                logger.warning(f"⚠️ Raydium endpoint {i+1} error: {response.status}")
                                 continue
                                 
-                except asyncio.TimeoutError:
-                    logger.warning(f"⚠️ Raydium endpoint {i+1} timeout, trying next...")
-                    continue
                 except Exception as e:
-                    logger.warning(f"⚠️ Raydium endpoint {i+1} error: {e}")
+                    logger.warning(f"⚠️ Raydium endpoint {i+1} failed: {e}")
                     continue
             
             logger.warning("⚠️ All Raydium endpoints failed")
@@ -890,6 +1003,77 @@ class SolanaTradingBot:
         except Exception as e:
             logger.error(f"❌ Raydium discovery error: {e}")
             return []
+
+    def _parse_raydium_response(self, data, endpoint_num: int) -> List[str]:
+        """Parse Raydium response with better error handling"""
+        try:
+            tokens = []
+            
+            # Handle different response formats
+            if endpoint_num == 1:
+                # V3 API format
+                if not data.get("success"):
+                    logger.warning(f"⚠️ Raydium endpoint {endpoint_num} returned unsuccessful response")
+                    return []
+                
+                pool_data = data.get("data", {})
+                pools = pool_data.get("data", []) if isinstance(pool_data, dict) else pool_data
+            else:
+                # V2 API format
+                if isinstance(data, list):
+                    pools = data
+                else:
+                    pools = data.get("data", data.get("pairs", []))
+            
+            if not pools:
+                logger.warning(f"⚠️ Raydium endpoint {endpoint_num} returned no pools")
+                return []
+            
+            logger.info(f"📊 Raydium endpoint {endpoint_num} returned {len(pools)} pools")
+            
+            for pool in pools[:30]:
+                try:
+                    # Handle different pool formats
+                    if endpoint_num == 1:
+                        # V3 format
+                        tvl = pool.get("tvl", 0)
+                        if not (1000 < float(tvl or 0) < 1000000):
+                            continue
+                        
+                        mint_a = pool.get("mintA", {}).get("address")
+                        mint_b = pool.get("mintB", {}).get("address")
+                    else:
+                        # V2 format
+                        tvl = pool.get("liquidity", pool.get("tvl", 0))
+                        if not (1000 < float(tvl or 0) < 1000000):
+                            continue
+                        
+                        mint_a = pool.get("baseMint", pool.get("tokenA"))
+                        mint_b = pool.get("quoteMint", pool.get("tokenB"))
+                    
+                    new_token = None
+                    if mint_a in [self.sol_mint, self.usdc_mint]:
+                        if mint_b and mint_b not in [self.sol_mint, self.usdc_mint]:
+                            new_token = mint_b
+                    elif mint_b in [self.sol_mint, self.usdc_mint]:
+                        if mint_a and mint_a not in [self.sol_mint, self.usdc_mint]:
+                            new_token = mint_a
+                    
+                    if new_token:
+                        tokens.append(new_token)
+                        logger.info(f"📍 Raydium pool: {new_token[:8]} (TVL: ${float(tvl or 0):,.0f})")
+                        
+                except Exception as e:
+                    logger.debug(f"Error parsing Raydium pool: {e}")
+                    continue
+            
+            return tokens
+            
+        except Exception as e:
+            logger.error(f"❌ Error parsing Raydium response: {e}")
+            return []
+
+    # ==================== END ENHANCED DISCOVERY METHODS ====================
 
     def filter_tokens_enhanced(self, tokens: List[str]) -> List[str]:
         """Enhanced token filtering with blacklist checking"""
@@ -927,40 +1111,28 @@ class SolanaTradingBot:
         return filtered
 
     async def discover_new_tokens(self) -> List[str]:
-        """Enhanced discovery with simple fallback endpoints"""
+        """Phase 1 Enhanced discovery with PumpPortal fallbacks"""
         try:
-            logger.info("🚀 Starting enhanced token discovery with fallbacks...")
+            logger.info("🔍 Phase 1 Enhanced Token Discovery")
             new_tokens = []
             
-            # Method 1: Enhanced Pump.fun (with fallbacks)
-            try:
-                logger.info("📍 Phase 1: Enhanced Pump.fun Discovery")
-                pumpfun_tokens = await self.pumpfun_discovery()
-                new_tokens.extend(pumpfun_tokens)
-                logger.info(f"✅ Pump.fun: {len(pumpfun_tokens)} tokens")
-            except Exception as e:
-                logger.error(f"❌ Pump.fun discovery failed: {e}")
-                pumpfun_tokens = []
+            # Method 1: Enhanced Pump.fun (with PumpPortal fallback) - PRIMARY
+            logger.info("📍 Phase 1: Enhanced Pump.fun Discovery")
+            pumpfun_tokens = await self.pumpfun_discovery()
+            new_tokens.extend(pumpfun_tokens)
+            logger.info(f"✅ Pump.fun: {len(pumpfun_tokens)} tokens")
             
-            # Method 2: Enhanced DexScreener (with fallbacks)
-            try:
-                logger.info("📍 Phase 2: Enhanced DexScreener Discovery")
-                dexscreener_tokens = await self.dexscreener_discovery()
-                new_tokens.extend(dexscreener_tokens)
-                logger.info(f"✅ DexScreener: {len(dexscreener_tokens)} tokens")
-            except Exception as e:
-                logger.error(f"❌ DexScreener discovery failed: {e}")
-                dexscreener_tokens = []
+            # Method 2: Enhanced DexScreener - SUPPLEMENTARY
+            logger.info("📍 Phase 1: Enhanced DexScreener Discovery") 
+            dexscreener_tokens = await self.dexscreener_discovery()
+            new_tokens.extend(dexscreener_tokens)
+            logger.info(f"✅ DexScreener: {len(dexscreener_tokens)} tokens")
             
-            # Method 3: Enhanced Raydium (with fallbacks)
-            try:
-                logger.info("📍 Phase 3: Enhanced Raydium Discovery")
-                raydium_tokens = await self.raydium_discovery()
-                new_tokens.extend(raydium_tokens)
-                logger.info(f"✅ Raydium: {len(raydium_tokens)} tokens")
-            except Exception as e:
-                logger.error(f"❌ Raydium discovery failed: {e}")
-                raydium_tokens = []
+            # Method 3: Enhanced Raydium - SUPPLEMENTARY
+            logger.info("📍 Phase 1: Enhanced Raydium Discovery")
+            raydium_tokens = await self.raydium_discovery()
+            new_tokens.extend(raydium_tokens)
+            logger.info(f"✅ Raydium: {len(raydium_tokens)} tokens")
             
             unique_tokens = list(set(new_tokens))
             filtered_tokens = self.filter_tokens_enhanced(unique_tokens)
@@ -983,7 +1155,7 @@ class SolanaTradingBot:
             return prioritized_tokens[:10]
             
         except Exception as e:
-            logger.error(f"❌ Error discovering NEW tokens: {e}")
+            logger.error(f"❌ Error in Phase 1 discovery: {e}")
             return []
 
     async def execute_trade(self, token_address: str) -> bool:
@@ -1167,8 +1339,8 @@ class SolanaTradingBot:
             logger.error(f"❌ Error monitoring positions: {e}")
 
     async def main_trading_loop(self):
-        """Main trading loop with proper diversification"""
-        logger.info("🔄 Starting main trading loop with diversification...")
+        """Main trading loop with proper diversification - Phase 1 Enhanced"""
+        logger.info("🔄 Starting Phase 1 Enhanced trading loop...")
         
         self.recently_traded = set()
         last_cooldown_cleanup = time.time()
@@ -1177,7 +1349,7 @@ class SolanaTradingBot:
         while True:
             try:
                 loop_count += 1
-                logger.info(f"🔍 Trading loop #{loop_count}")
+                logger.info(f"🔍 Phase 1 Trading loop #{loop_count}")
                 
                 # Clean up cooldown every 15 minutes
                 if time.time() - last_cooldown_cleanup > 900:
@@ -1249,8 +1421,9 @@ class SolanaTradingBot:
                 await asyncio.sleep(10)
 
     async def run(self):
-        """Start the trading bot"""
-        logger.info("🚀 Starting Solana Trading Bot...")
+        """Start the Phase 1 Enhanced trading bot"""
+        logger.info("🚀 Starting Phase 1 Enhanced Solana Trading Bot...")
+        logger.info("🔄 Phase 1: PumpPortal fallback system active")
         
         if self.enable_real_trading:
             logger.warning("⚠️⚠️⚠️ REAL TRADING MODE ENABLED ⚠️⚠️⚠️")
@@ -1268,25 +1441,25 @@ class SolanaTradingBot:
         logger.info("✅ Bot configuration validated")
         
         if self.enable_real_trading:
-            logger.info("💸 Bot is now operational and ready for REAL TRADING!")
+            logger.info("💸 Phase 1 Bot is now operational and ready for REAL TRADING!")
             logger.info(f"💰 Will trade REAL MONEY: ${self.trade_amount/1_000_000} per trade")
         else:
-            logger.info("🎯 Bot is now operational in SIMULATION mode!")
+            logger.info("🎯 Phase 1 Bot is now operational in SIMULATION mode!")
             logger.info(f"💰 Simulating trades with ${self.trade_amount/1_000_000} amounts")
         
-        logger.info(f"🔍 Looking for NEW token opportunities...")
+        logger.info(f"🔍 Looking for NEW token opportunities with PumpPortal fallbacks...")
         
         await self.main_trading_loop()
 
 async def main():
-    """Entry point"""
+    """Entry point for Phase 1 Enhanced Bot"""
     try:
         bot = SolanaTradingBot()
         await bot.run()
     except Exception as e:
         logger.error(f"❌ Fatal error: {e}")
     finally:
-        logger.info("🏁 Bot shutdown complete")
+        logger.info("🏁 Phase 1 Bot shutdown complete")
 
 if __name__ == "__main__":
     asyncio.run(main())

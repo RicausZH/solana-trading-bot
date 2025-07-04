@@ -427,25 +427,36 @@ class SolanaTradingBot:
             if token_address == self.sol_mint:
                 logger.info(f"⏭️ Skipping SOL - looking for new tokens only")
                 return False, 0.5
-            
+        
             logger.info(f"🔍 Analyzing token safety: {token_address}")
-            
-            # Import and use fraud detector
+        
+            # Try to use fraud detector with proper error handling
             try:
-                from src.fraud_detector import FraudDetector
-                from src.config import Config
-                
-                config = Config()
-                async with FraudDetector(config) as detector:
-                    is_safe, analysis_report = await detector.analyze_token_safety(token_address)
-                    confidence = analysis_report.get('safety_score', 0.0)
-                    
-                    return is_safe, confidence
-            except ImportError:
-                # Fallback if fraud_detector import fails
-                logger.warning("⚠️ Fraud detector import failed, using simplified analysis")
-                return await self.simplified_safety_check(token_address)
+                # Import here to avoid import errors at startup
+                import sys
+                import os
+                sys.path.append(os.path.dirname(__file__))
             
+                from fraud_detector import FraudDetector
+                from config import Config
+            
+                config = Config()
+                fraud_detector = FraudDetector(config)
+            
+                # Use async context manager properly
+                async with fraud_detector:
+                    is_safe, analysis_report = await fraud_detector.analyze_token_safety(token_address)
+                    confidence = analysis_report.get('safety_score', 0.0)
+                
+                logger.info(f"✅ Advanced fraud detection completed: {confidence:.2f}")
+                    return is_safe, confidence
+                
+            except Exception as import_error:
+                # Log the specific import error for debugging
+                logger.warning(f"⚠️ Fraud detector import failed: {import_error}")
+                logger.info("🔄 Falling back to simplified analysis")
+                return await self.simplified_safety_check(token_address)
+        
         except Exception as e:
             logger.error(f"❌ Error in safety analysis: {e}")
             return False, 0.0

@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3sd
 """
-Solana Trading Bot - COMPLETE FIXED VERSION WITH ALL ERRORS RESOLVED
+Solana Trading Bot - ENHANCED VERSION WITH FALLBACK ENDPOINTS
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet when enabled
 Features: New Token Detection, Token Blacklist, Advanced Fraud Detection, Optimized Trading
-Updated: 2025-07-04 - All API Errors Fixed, Brotli Support, Enhanced Fallbacks
+Enhanced: Multiple fallback endpoints for robust API error handling
+Updated: 2025-07-04 - Fixed Brotli and Raydium parsing issues
 """
 
 import os
@@ -76,19 +77,6 @@ class SolanaTradingBot:
         self.total_trades = 0
         self.profitable_trades = 0
         self.total_profit = 0.0
-        
-        # FIXED: Enhanced headers for Brotli compression
-        self.session_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate',  # FIXED: Removed br to avoid Brotli issues
-            'Connection': 'keep-alive',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'DNT': '1',
-            'Upgrade-Insecure-Requests': '1',
-        }
         
         # Load existing blacklist
         self.load_blacklist()
@@ -222,7 +210,7 @@ class SolanaTradingBot:
                 "inputMint": input_mint,
                 "outputMint": output_mint,
                 "amount": amount,
-                "slippageBps": self.slippage,
+                "slippageBps": self.slippage,  # Uses SLIPPAGE_BPS environment variable
                 "onlyDirectRoutes": "false",
                 "asLegacyTransaction": "false"
             }
@@ -472,7 +460,7 @@ class SolanaTradingBot:
             
             # Calculate weighted score
             final_score = (dexscreener_score * 0.70) + (pattern_score * 0.30)
-            is_safe = final_score >= self.safety_threshold
+            is_safe = final_score >= self.safety_threshold  # Uses SAFETY_THRESHOLD
             
             logger.info(f"🔒 SIMPLIFIED SAFETY REPORT for {token_address[:8]}:")
             logger.info(f"   DexScreener: {dexscreener_score:.2f}")
@@ -488,7 +476,7 @@ class SolanaTradingBot:
     async def dexscreener_analysis(self, token_address: str) -> float:
         """DexScreener analysis using environment variables"""
         try:
-            url = f"{self.dexscreener_url}/{token_address}"
+            url = f"{self.dexscreener_url}/{token_address}"  # Uses DEXSCREENER_API
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=15) as response:
@@ -504,11 +492,13 @@ class SolanaTradingBot:
                             
                             score = 0.20
                             
+                            # Uses MIN_LIQUIDITY_USD environment variable
                             if liquidity_usd >= self.min_liquidity_usd * 3:
                                 score += 0.35
                             elif liquidity_usd >= self.min_liquidity_usd:
                                 score += 0.25
                             
+                            # Uses MIN_VOLUME_24H environment variable
                             if volume_24h >= self.min_volume_24h * 5:
                                 score += 0.35
                             elif volume_24h >= self.min_volume_24h:
@@ -551,80 +541,87 @@ class SolanaTradingBot:
             logger.warning(f"⚠️ Pattern analysis error: {e}")
             return 0.50
 
-    async def pumpfun_discovery_enhanced(self) -> List[str]:
-        """FIXED: Enhanced Pump.fun discovery with working fallback endpoints"""
+    async def pumpfun_discovery(self) -> List[str]:
+        """Enhanced Pump.fun discovery with simple fallback endpoints"""
         try:
-            # FIXED: Multiple working endpoints with proper headers
+            # Simple fallback endpoints - keeping exact working headers
             endpoints = [
-                {
-                    "url": "https://frontend-api.pump.fun/coins",
-                    "params": {"offset": 0, "limit": 50, "sort": "created_timestamp", "order": "DESC"},
-                    "headers": {**self.session_headers, "Referer": "https://pump.fun/"}
-                },
-                {
-                    "url": "https://api.pump.fun/coins/latest",
-                    "params": {"limit": 50},
-                    "headers": {**self.session_headers, "Origin": "https://pump.fun"}
-                },
-                {
-                    "url": "https://pumpportal.fun/api/coins",
-                    "params": {"sort": "created_timestamp", "order": "desc", "limit": 40},
-                    "headers": {**self.session_headers, "Referer": "https://pumpportal.fun/"}
-                },
-                {
-                    "url": "https://gmgn.ai/api/v1/tokens/solana",
-                    "params": {"sort": "created_timestamp", "limit": 30},
-                    "headers": self.session_headers
-                },
-                {
-                    "url": "https://api.coingecko.com/api/v3/coins/solana/contract/{address}",
-                    "params": {"localization": "false"},
-                    "headers": self.session_headers
-                }
+                "https://frontend-api.pump.fun/coins",  # Your working endpoint first
+                "https://api.pump.fun/coins/latest",
+                "https://pump.fun/api/coins",
+                "https://pumpportal.fun/api/coins",
+                "https://frontend-api.pump.fun/coins/king-of-the-hill"
             ]
             
-            for i, endpoint in enumerate(endpoints):
+            for i, url in enumerate(endpoints):
                 try:
-                    logger.info(f"📍 Trying Pump.fun endpoint {i+1}/{len(endpoints)}: {endpoint['url']}")
+                    logger.info(f"📍 Trying Pump.fun endpoint {i+1}/{len(endpoints)}: {url}")
+                    
+                    # Your exact working parameters and headers
+                    params = {
+                        "offset": 0,
+                        "limit": 50,
+                        "sort": "created_timestamp",
+                        "order": "DESC"
+                    }
+                    
+                    # Exact same simple headers that work
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json'
+                    }
                     
                     if i > 0:
-                        delay = min(2 ** i, 8)  # Exponential backoff, max 8 seconds
-                        await asyncio.sleep(delay)
+                        await asyncio.sleep(1)  # Simple delay
                     
-                    timeout = aiohttp.ClientTimeout(total=20)
-                    connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-                    
-                    async with aiohttp.ClientSession(
-                        timeout=timeout, 
-                        connector=connector
-                    ) as session:
-                        async with session.get(
-                            endpoint["url"], 
-                            params=endpoint.get("params", {}), 
-                            headers=endpoint.get("headers", self.session_headers)
-                        ) as response:
-                            
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, params=params, headers=headers, timeout=15) as response:
                             logger.info(f"🔍 Pump.fun endpoint {i+1} response: {response.status}")
                             
                             if response.status == 200:
-                                try:
-                                    data = await response.json()
-                                    tokens = self._parse_pumpfun_response(data, i+1)
+                                data = await response.json()
+                                tokens = []
+                                current_time = time.time()
+                                
+                                # Your exact working parsing logic
+                                coins = data if isinstance(data, list) else data.get('coins', [])
+                                
+                                for coin in coins[:30]:
+                                    created_timestamp = (
+                                        coin.get("created_timestamp") or 
+                                        coin.get("createdAt") or 
+                                        coin.get("timestamp")
+                                    )
                                     
-                                    if tokens:
-                                        logger.info(f"✅ Pump.fun endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
-                                        return tokens[:10]
-                                    else:
-                                        logger.warning(f"⚠️ Pump.fun endpoint {i+1} returned no valid tokens")
+                                    if not created_timestamp:
                                         continue
-                                        
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"❌ Pump.fun endpoint {i+1} JSON decode error: {e}")
+                                    
+                                    try:
+                                        if isinstance(created_timestamp, str):
+                                            created_time = datetime.datetime.fromisoformat(created_timestamp.replace('Z', '+00:00')).timestamp()
+                                        else:
+                                            created_time = float(created_timestamp)
+                                            if created_time > 10**12:
+                                                created_time = created_time / 1000
+                                    except:
+                                        continue
+                                    
+                                    hours_old = (current_time - created_time) / 3600
+                                    if hours_old > 6:
+                                        continue
+                                    
+                                    mint_address = coin.get("mint") or coin.get("address") or coin.get("token")
+                                    if mint_address and len(mint_address) == 44:
+                                        tokens.append(mint_address)
+                                        logger.info(f"📍 Pump.fun NEW token: {mint_address[:8]} (age: {hours_old:.1f}h)")
+                                
+                                if tokens:
+                                    logger.info(f"✅ Pump.fun endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
+                                    return tokens[:10]
+                                else:
+                                    logger.warning(f"⚠️ Pump.fun endpoint {i+1} returned no valid tokens")
                                     continue
-                                except Exception as e:
-                                    logger.error(f"❌ Pump.fun endpoint {i+1} parse error: {e}")
-                                    continue
-                            
+                                    
                             elif response.status == 530:
                                 logger.warning(f"⚠️ Pump.fun endpoint {i+1} server unavailable (530), trying next...")
                                 continue
@@ -635,9 +632,6 @@ class SolanaTradingBot:
                                 logger.warning(f"⚠️ Pump.fun endpoint {i+1} rate limited (429), waiting...")
                                 await asyncio.sleep(30)
                                 continue
-                            elif response.status == 403:
-                                logger.warning(f"⚠️ Pump.fun endpoint {i+1} access denied (403), trying next...")
-                                continue
                             else:
                                 logger.warning(f"⚠️ Pump.fun endpoint {i+1} status: {response.status}")
                                 continue
@@ -645,212 +639,107 @@ class SolanaTradingBot:
                 except asyncio.TimeoutError:
                     logger.warning(f"⚠️ Pump.fun endpoint {i+1} timeout, trying next...")
                     continue
-                except aiohttp.ClientError as e:
-                    logger.warning(f"⚠️ Pump.fun endpoint {i+1} client error: {e}")
-                    continue
                 except Exception as e:
-                    logger.error(f"❌ Pump.fun endpoint {i+1} unexpected error: {e}")
+                    logger.warning(f"⚠️ Pump.fun endpoint {i+1} error: {e}")
                     continue
             
             logger.warning("⚠️ All Pump.fun endpoints failed - no tokens discovered")
             return []
             
         except Exception as e:
-            logger.error(f"❌ Pump.fun discovery critical error: {e}")
+            logger.error(f"❌ Pump.fun discovery error: {e}")
             return []
 
-    def _parse_pumpfun_response(self, data: Dict, endpoint_num: int) -> List[str]:
-        """FIXED: Parse Pump.fun API response with robust error handling"""
+    async def dexscreener_discovery(self) -> List[str]:
+        """Enhanced DexScreener discovery with simple fallback endpoints"""
         try:
-            tokens = []
-            current_time = time.time()
-            
-            # FIXED: Handle different response formats
-            if isinstance(data, list):
-                coins = data
-            else:
-                coins = (
-                    data.get('coins', []) or 
-                    data.get('data', []) or 
-                    data.get('tokens', []) or
-                    data.get('results', [])
-                )
-            
-            if not coins:
-                logger.warning(f"⚠️ Pump.fun endpoint {endpoint_num} returned empty coins list")
-                return []
-            
-            logger.info(f"📊 Pump.fun endpoint {endpoint_num} returned {len(coins)} coins")
-            
-            for coin in coins[:50]:
-                try:
-                    # FIXED: Multiple timestamp field handling
-                    created_timestamp = (
-                        coin.get("created_timestamp") or 
-                        coin.get("createdAt") or 
-                        coin.get("timestamp") or
-                        coin.get("created") or
-                        coin.get("createdAtUtc") or
-                        coin.get("launch_timestamp") or
-                        coin.get("deployedAt")
-                    )
-                    
-                    if not created_timestamp:
-                        continue
-                    
-                    # FIXED: Robust timestamp conversion
-                    try:
-                        if isinstance(created_timestamp, str):
-                            if 'T' in created_timestamp:
-                                created_time = datetime.datetime.fromisoformat(
-                                    created_timestamp.replace('Z', '+00:00')
-                                ).timestamp()
-                            else:
-                                created_time = float(created_timestamp)
-                        else:
-                            created_time = float(created_timestamp)
-                            
-                        # Handle milliseconds
-                        if created_time > 10**12:
-                            created_time = created_time / 1000
-                            
-                    except (ValueError, TypeError) as e:
-                        logger.debug(f"Timestamp conversion error: {e}")
-                        continue
-                    
-                    # Filter by age (only tokens less than 6 hours old)
-                    hours_old = (current_time - created_time) / 3600
-                    if hours_old > 6:
-                        continue
-                    
-                    # FIXED: Multiple mint address field handling
-                    mint_address = (
-                        coin.get("mint") or 
-                        coin.get("address") or 
-                        coin.get("token") or
-                        coin.get("token_address") or
-                        coin.get("contract_address") or
-                        coin.get("tokenAddress")
-                    )
-                    
-                    if mint_address and len(mint_address) >= 32:
-                        # FIXED: Validate Solana address format
-                        if self._is_valid_solana_address(mint_address):
-                            tokens.append(mint_address)
-                            
-                            # Get token info for logging
-                            token_name = coin.get("name", "Unknown")
-                            token_symbol = coin.get("symbol", "???")
-                            
-                            logger.info(f"🎯 Pump.fun NEW: {token_name} ({token_symbol}) - {mint_address[:8]}... (age: {hours_old:.1f}h)")
-                            
-                except Exception as e:
-                    logger.debug(f"Error parsing coin: {e}")
-                    continue
-            
-            return tokens
-            
-        except Exception as e:
-            logger.error(f"❌ Error parsing Pump.fun response: {e}")
-            return []
-
-    def _is_valid_solana_address(self, address: str) -> bool:
-        """FIXED: Validate if string is a valid Solana address"""
-        try:
-            if not address or not isinstance(address, str):
-                return False
-            
-            # Basic length check (Solana addresses are 32-44 characters)
-            if len(address) < 32 or len(address) > 44:
-                return False
-            
-            # Check if it's base58 encoded (basic check)
-            valid_chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-            return all(c in valid_chars for c in address)
-            
-        except Exception:
-            return False
-
-    async def dexscreener_discovery_enhanced(self) -> List[str]:
-        """FIXED: Enhanced DexScreener discovery with Brotli fix and fallback endpoints"""
-        try:
-            # FIXED: Multiple endpoints with proper headers (no Brotli)
+            # Simple fallback endpoints - no complex headers to avoid Brotli issues
             endpoints = [
-                {
-                    "url": "https://api.dexscreener.com/latest/dex/pairs/solana",
-                    "headers": {**self.session_headers, "Referer": "https://dexscreener.com/"}
-                },
-                {
-                    "url": "https://api.dexscreener.com/v1/dex/pairs/solana",
-                    "headers": self.session_headers
-                },
-                {
-                    "url": "https://api.dexscreener.com/latest/dex/search",
-                    "params": {"q": "solana", "limit": 100},
-                    "headers": {**self.session_headers, "Referer": "https://dexscreener.com/"}
-                },
-                {
-                    "url": "https://birdeye.so/api/defi/tokenlist",
-                    "params": {"sort_by": "volume24hChangePercent", "sort_type": "desc", "offset": 0, "limit": 50},
-                    "headers": {**self.session_headers, "X-Chain": "solana"}
-                },
-                {
-                    "url": "https://public-api.birdeye.so/defi/tokenlist",
-                    "params": {"sort_by": "volume24hChangePercent", "sort_type": "desc", "offset": 0, "limit": 50},
-                    "headers": {**self.session_headers, "X-Chain": "solana"}
-                }
+                "https://api.dexscreener.com/latest/dex/pairs/solana",  # Your working endpoint first
+                "https://api.dexscreener.com/v1/dex/pairs/solana",
+                "https://api.dexscreener.com/latest/dex/search?q=solana&limit=100",
+                "https://api.dexscreener.io/latest/dex/pairs/solana",
+                "https://dexscreener.com/api/latest/dex/pairs/solana"
             ]
             
-            for i, endpoint in enumerate(endpoints):
+            for i, url in enumerate(endpoints):
                 try:
-                    logger.info(f"📍 Trying DexScreener endpoint {i+1}/{len(endpoints)}: {endpoint['url']}")
+                    logger.info(f"📍 Trying DexScreener endpoint {i+1}/{len(endpoints)}: {url}")
+                    
+                    # Exact same simple headers that work - no complex compression
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json'
+                    }
                     
                     if i > 0:
-                        await asyncio.sleep(2 + (i * 0.5))  # Progressive delays
+                        await asyncio.sleep(2)  # Simple delay
                     
-                    timeout = aiohttp.ClientTimeout(total=25)
-                    connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-                    
-                    async with aiohttp.ClientSession(
-                        timeout=timeout, 
-                        connector=connector
-                    ) as session:
-                        async with session.get(
-                            endpoint["url"], 
-                            params=endpoint.get("params", {}),
-                            headers=endpoint.get("headers", self.session_headers)
-                        ) as response:
-                            
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, headers=headers, timeout=15) as response:
                             logger.info(f"🔍 DexScreener endpoint {i+1} response: {response.status}")
                             
                             if response.status == 200:
-                                try:
-                                    data = await response.json()
-                                    tokens = self._parse_dexscreener_response(data, i+1)
+                                data = await response.json()
+                                tokens = []
+                                current_time = time.time()
+                                
+                                # Your exact working parsing logic
+                                pairs = data.get("pairs", [])
+                                if not pairs:
+                                    logger.warning(f"⚠️ DexScreener endpoint {i+1} returned no pairs")
+                                    continue
+                                
+                                for pair in pairs[:100]:
+                                    created_at = (
+                                        pair.get("pairCreatedAt") or 
+                                        pair.get("createdAt") or
+                                        pair.get("firstSeenAt")
+                                    )
                                     
-                                    if tokens:
-                                        logger.info(f"✅ DexScreener endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
-                                        return tokens[:15]
+                                    if created_at:
+                                        try:
+                                            if isinstance(created_at, str):
+                                                created_timestamp = datetime.datetime.fromisoformat(created_at.replace('Z', '+00:00')).timestamp()
+                                            else:
+                                                created_timestamp = float(created_at)
+                                                if created_timestamp > 10**12:
+                                                    created_timestamp = created_timestamp / 1000
+                                            
+                                            hours_old = (current_time - created_timestamp) / 3600
+                                            if hours_old > 24:
+                                                continue
+                                            
+                                        except:
+                                            continue
                                     else:
-                                        logger.warning(f"⚠️ DexScreener endpoint {i+1} returned no valid tokens")
                                         continue
-                                        
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"❌ DexScreener endpoint {i+1} JSON decode error: {e}")
+                                    
+                                    base_token = pair.get("baseToken", {})
+                                    quote_token = pair.get("quoteToken", {})
+                                    
+                                    base_address = base_token.get("address")
+                                    quote_address = quote_token.get("address")
+                                    
+                                    if quote_address in [self.sol_mint, self.usdc_mint] and base_address:
+                                        liquidity = pair.get("liquidity", {}).get("usd", 0)
+                                        if liquidity and float(liquidity) > 1000:
+                                            tokens.append(base_address)
+                                            logger.info(f"📍 DexScreener NEW: {base_address[:8]} (age: {hours_old:.1f}h, liq: ${float(liquidity):,.0f})")
+                                
+                                if tokens:
+                                    logger.info(f"✅ DexScreener endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
+                                    return tokens[:15]
+                                else:
+                                    logger.warning(f"⚠️ DexScreener endpoint {i+1} returned no valid tokens")
                                     continue
-                                except Exception as e:
-                                    logger.error(f"❌ DexScreener endpoint {i+1} parse error: {e}")
-                                    continue
-                            
+                                    
                             elif response.status == 404:
                                 logger.warning(f"⚠️ DexScreener endpoint {i+1} not found (404), trying next...")
                                 continue
                             elif response.status == 429:
                                 logger.warning(f"⚠️ DexScreener endpoint {i+1} rate limited (429), waiting...")
                                 await asyncio.sleep(60)
-                                continue
-                            elif response.status == 403:
-                                logger.warning(f"⚠️ DexScreener endpoint {i+1} access denied (403), trying next...")
                                 continue
                             else:
                                 logger.warning(f"⚠️ DexScreener endpoint {i+1} status: {response.status}")
@@ -859,150 +748,39 @@ class SolanaTradingBot:
                 except asyncio.TimeoutError:
                     logger.warning(f"⚠️ DexScreener endpoint {i+1} timeout, trying next...")
                     continue
-                except aiohttp.ClientError as e:
-                    logger.warning(f"⚠️ DexScreener endpoint {i+1} client error: {e}")
-                    continue
                 except Exception as e:
-                    logger.error(f"❌ DexScreener endpoint {i+1} unexpected error: {e}")
+                    logger.warning(f"⚠️ DexScreener endpoint {i+1} error: {e}")
                     continue
             
             logger.warning("⚠️ All DexScreener endpoints failed - no tokens discovered")
             return []
             
         except Exception as e:
-            logger.error(f"❌ DexScreener discovery critical error: {e}")
+            logger.error(f"❌ DexScreener discovery error: {e}")
             return []
 
-    def _parse_dexscreener_response(self, data: Dict, endpoint_num: int) -> List[str]:
-        """FIXED: Parse DexScreener API response with robust error handling"""
+    async def raydium_discovery(self) -> List[str]:
+        """Enhanced Raydium discovery with simple fallback endpoints and fixed parsing"""
         try:
-            tokens = []
-            current_time = time.time()
-            
-            # FIXED: Handle different response formats
-            if isinstance(data, list):
-                pairs = data
-            else:
-                pairs = (
-                    data.get("pairs", []) or 
-                    data.get("data", []) or
-                    data.get("tokens", []) or
-                    data.get("results", [])
-                )
-            
-            if not pairs:
-                logger.warning(f"⚠️ DexScreener endpoint {endpoint_num} returned no pairs")
-                return []
-            
-            logger.info(f"📊 DexScreener endpoint {endpoint_num} returned {len(pairs)} pairs")
-            
-            for pair in pairs[:100]:
-                try:
-                    # FIXED: Multiple timestamp field handling
-                    created_at = (
-                        pair.get("pairCreatedAt") or 
-                        pair.get("createdAt") or
-                        pair.get("firstSeenAt") or
-                        pair.get("createdAtUtc") or
-                        pair.get("deployedAt")
-                    )
-                    
-                    if created_at:
-                        try:
-                            if isinstance(created_at, str):
-                                if 'T' in created_at:
-                                    created_timestamp = datetime.datetime.fromisoformat(
-                                        created_at.replace('Z', '+00:00')
-                                    ).timestamp()
-                                else:
-                                    created_timestamp = float(created_at)
-                            else:
-                                created_timestamp = float(created_at)
-                                
-                            # Handle milliseconds
-                            if created_timestamp > 10**12:
-                                created_timestamp = created_timestamp / 1000
-                            
-                            hours_old = (current_time - created_timestamp) / 3600
-                            if hours_old > 24:
-                                continue
-                            
-                        except (ValueError, TypeError):
-                            continue
-                    else:
-                        continue
-                    
-                    # FIXED: Robust token extraction
-                    base_token = pair.get("baseToken", {})
-                    quote_token = pair.get("quoteToken", {})
-                    
-                    if not base_token or not quote_token:
-                        continue
-                    
-                    base_address = base_token.get("address")
-                    quote_address = quote_token.get("address")
-                    
-                    if not base_address or not quote_address:
-                        continue
-                    
-                    # Only consider pairs with SOL or USDC as quote token
-                    if quote_address in [self.sol_mint, self.usdc_mint] and base_address:
-                        # FIXED: Robust liquidity extraction
-                        liquidity = pair.get("liquidity", {})
-                        if isinstance(liquidity, dict):
-                            liquidity_usd = liquidity.get("usd", 0)
-                        else:
-                            liquidity_usd = liquidity or 0
-                        
-                        try:
-                            liquidity_value = float(liquidity_usd) if liquidity_usd else 0
-                        except (ValueError, TypeError):
-                            liquidity_value = 0
-                        
-                        # Only include tokens with sufficient liquidity
-                        if liquidity_value > 1000:
-                            if self._is_valid_solana_address(base_address):
-                                tokens.append(base_address)
-                                
-                                # Get token info for logging
-                                token_name = base_token.get("name", "Unknown")
-                                token_symbol = base_token.get("symbol", "???")
-                                
-                                logger.info(f"🎯 DexScreener NEW: {token_name} ({token_symbol}) - {base_address[:8]}... (age: {hours_old:.1f}h, liq: ${liquidity_value:,.0f})")
-                                
-                except Exception as e:
-                    logger.debug(f"Error parsing DexScreener pair: {e}")
-                    continue
-            
-            return tokens
-            
-        except Exception as e:
-            logger.error(f"❌ Error parsing DexScreener response: {e}")
-            return []
-
-    async def raydium_discovery_enhanced(self) -> List[str]:
-        """FIXED: Enhanced Raydium discovery with corrected response parsing"""
-        try:
-            # FIXED: Multiple working Raydium endpoints
+            # Simple fallback endpoints
             endpoints = [
                 {
-                    "url": "https://api-v3.raydium.io/pools/info/list",
+                    "url": "https://api-v3.raydium.io/pools/info/list",  # Your working endpoint first
                     "params": {
                         "poolType": "all",
                         "poolSortField": "default",
                         "sortType": "desc",
                         "pageSize": 50,
                         "page": 1
-                    },
-                    "headers": {**self.session_headers, "Referer": "https://raydium.io/"}
+                    }
                 },
                 {
                     "url": "https://api.raydium.io/v2/main/pairs",
-                    "headers": self.session_headers
+                    "params": {}
                 },
                 {
-                    "url": "https://api.raydium.io/v2/sdk/liquidity/mainnet.json",
-                    "headers": self.session_headers
+                    "url": "https://api.raydium.io/v2/pairs",
+                    "params": {}
                 }
             ]
             
@@ -1010,49 +788,90 @@ class SolanaTradingBot:
                 try:
                     logger.info(f"📍 Trying Raydium endpoint {i+1}/{len(endpoints)}: {endpoint['url']}")
                     
+                    # Exact same simple headers that work
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/json'
+                    }
+                    
                     if i > 0:
-                        await asyncio.sleep(1 + (i * 0.5))
+                        await asyncio.sleep(1)
                     
-                    timeout = aiohttp.ClientTimeout(total=20)
-                    connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-                    
-                    async with aiohttp.ClientSession(
-                        timeout=timeout, 
-                        connector=connector
-                    ) as session:
+                    async with aiohttp.ClientSession() as session:
                         async with session.get(
                             endpoint["url"], 
-                            params=endpoint.get("params", {}),
-                            headers=endpoint.get("headers", self.session_headers)
+                            params=endpoint.get("params", {}), 
+                            headers=headers, 
+                            timeout=15
                         ) as response:
-                            
                             logger.info(f"🔍 Raydium endpoint {i+1} response: {response.status}")
                             
                             if response.status == 200:
-                                try:
-                                    data = await response.json()
-                                    tokens = self._parse_raydium_response(data, i+1)
-                                    
-                                    if tokens:
-                                        logger.info(f"✅ Raydium endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
-                                        return tokens[:10]
-                                    else:
-                                        logger.warning(f"⚠️ Raydium endpoint {i+1} returned no valid tokens")
+                                data = await response.json()
+                                tokens = []
+                                
+                                # FIXED: Handle different response formats properly
+                                if i == 0:  # First endpoint (your working one)
+                                    if not data.get("success"):
+                                        logger.warning(f"⚠️ Raydium endpoint {i+1} returned unsuccessful response")
                                         continue
+                                    
+                                    pool_data = data.get("data", {})
+                                    pools = pool_data.get("data", []) if isinstance(pool_data, dict) else pool_data
+                                    
+                                else:  # Other endpoints - handle list responses
+                                    if isinstance(data, list):
+                                        pools = data
+                                    else:
+                                        pools = data.get("data", data.get("pairs", []))
+                                
+                                if not pools:
+                                    logger.warning(f"⚠️ Raydium endpoint {i+1} returned no pools")
+                                    continue
+                                
+                                logger.info(f"📊 Raydium endpoint {i+1} returned {len(pools)} pairs")
+                                
+                                # Parse pools with your exact working logic
+                                for pool in pools[:30]:
+                                    if i == 0:  # Your working endpoint logic
+                                        tvl = pool.get("tvl", 0)
                                         
-                                except json.JSONDecodeError as e:
-                                    logger.error(f"❌ Raydium endpoint {i+1} JSON decode error: {e}")
+                                        if not (1000 < float(tvl or 0) < 1000000):
+                                            continue
+                                        
+                                        mint_a = pool.get("mintA", {}).get("address")
+                                        mint_b = pool.get("mintB", {}).get("address")
+                                        
+                                        new_token = None
+                                        if mint_a in [self.sol_mint, self.usdc_mint]:
+                                            if mint_b and mint_b not in [self.sol_mint, self.usdc_mint]:
+                                                new_token = mint_b
+                                        elif mint_b in [self.sol_mint, self.usdc_mint]:
+                                            if mint_a and mint_a not in [self.sol_mint, self.usdc_mint]:
+                                                new_token = mint_a
+                                        
+                                        if new_token:
+                                            tokens.append(new_token)
+                                            logger.info(f"📍 Raydium pool: {new_token[:8]} (TVL: ${float(tvl or 0):,.0f})")
+                                    
+                                    else:  # Other endpoints - simplified parsing
+                                        base_mint = pool.get("baseMint") or pool.get("tokenA")
+                                        quote_mint = pool.get("quoteMint") or pool.get("tokenB")
+                                        
+                                        if quote_mint in [self.sol_mint, self.usdc_mint] and base_mint:
+                                            if base_mint not in [self.sol_mint, self.usdc_mint]:
+                                                tokens.append(base_mint)
+                                                logger.info(f"📍 Raydium pair: {base_mint[:8]}")
+                                
+                                if tokens:
+                                    logger.info(f"✅ Raydium endpoint {i+1} SUCCESS: {len(tokens)} tokens found")
+                                    return tokens[:15]
+                                else:
+                                    logger.warning(f"⚠️ Raydium endpoint {i+1} returned no valid tokens")
                                     continue
-                                except Exception as e:
-                                    logger.error(f"❌ Raydium endpoint {i+1} parse error: {e}")
-                                    continue
-                            
+                                    
                             elif response.status == 404:
                                 logger.warning(f"⚠️ Raydium endpoint {i+1} not found (404), trying next...")
-                                continue
-                            elif response.status == 429:
-                                logger.warning(f"⚠️ Raydium endpoint {i+1} rate limited (429), waiting...")
-                                await asyncio.sleep(30)
                                 continue
                             else:
                                 logger.warning(f"⚠️ Raydium endpoint {i+1} status: {response.status}")
@@ -1061,157 +880,16 @@ class SolanaTradingBot:
                 except asyncio.TimeoutError:
                     logger.warning(f"⚠️ Raydium endpoint {i+1} timeout, trying next...")
                     continue
-                except aiohttp.ClientError as e:
-                    logger.warning(f"⚠️ Raydium endpoint {i+1} client error: {e}")
-                    continue
                 except Exception as e:
-                    logger.error(f"❌ Raydium endpoint {i+1} unexpected error: {e}")
+                    logger.warning(f"⚠️ Raydium endpoint {i+1} error: {e}")
                     continue
             
             logger.warning("⚠️ All Raydium endpoints failed")
             return []
             
         except Exception as e:
-            logger.error(f"❌ Raydium discovery critical error: {e}")
+            logger.error(f"❌ Raydium discovery error: {e}")
             return []
-
-    def _parse_raydium_response(self, data: Dict, endpoint_num: int) -> List[str]:
-        """FIXED: Parse Raydium API response with corrected list handling"""
-        try:
-            tokens = []
-            current_time = time.time()
-            
-            # FIXED: Handle different response formats - this was the main error
-            if isinstance(data, list):
-                # FIXED: Direct list response handling
-                pools = data
-            else:
-                # FIXED: Nested data structure handling
-                if "success" in data and not data.get("success"):
-                    logger.warning(f"⚠️ Raydium endpoint {endpoint_num} returned unsuccessful response")
-                    return []
-                
-                # FIXED: Multiple possible data paths
-                pool_data = data.get("data", data)
-                if isinstance(pool_data, dict):
-                    pools = (
-                        pool_data.get("data", []) or 
-                        pool_data.get("pools", []) or
-                        pool_data.get("pairs", []) or
-                        pool_data.get("results", [])
-                    )
-                else:
-                    pools = pool_data or []
-            
-            if not pools:
-                logger.warning(f"⚠️ Raydium endpoint {endpoint_num} returned no pools")
-                return []
-            
-            logger.info(f"📊 Raydium endpoint {endpoint_num} returned {len(pools)} pairs")
-            
-            for pool in pools[:50]:
-                try:
-                    # FIXED: Handle both dict and list pool formats
-                    if isinstance(pool, list):
-                        # Some endpoints return arrays instead of objects
-                        continue
-                    
-                    if not isinstance(pool, dict):
-                        continue
-                    
-                    # FIXED: Multiple TVL field handling
-                    tvl = (
-                        pool.get("tvl") or 
-                        pool.get("liquidity") or
-                        pool.get("totalLiquidity") or
-                        pool.get("liquidityUsd") or
-                        0
-                    )
-                    
-                    try:
-                        tvl_value = float(tvl) if tvl else 0
-                    except (ValueError, TypeError):
-                        tvl_value = 0
-                    
-                    # Filter by TVL range
-                    if not (1000 < tvl_value < 1000000):
-                        continue
-                    
-                    # FIXED: Multiple mint field handling
-                    mint_a = None
-                    mint_b = None
-                    
-                    # Try different field structures
-                    if "mintA" in pool and "mintB" in pool:
-                        mint_a_data = pool.get("mintA")
-                        mint_b_data = pool.get("mintB")
-                        
-                        if isinstance(mint_a_data, dict):
-                            mint_a = mint_a_data.get("address")
-                        else:
-                            mint_a = mint_a_data
-                            
-                        if isinstance(mint_b_data, dict):
-                            mint_b = mint_b_data.get("address")
-                        else:
-                            mint_b = mint_b_data
-                    
-                    elif "baseMint" in pool and "quoteMint" in pool:
-                        mint_a = pool.get("baseMint")
-                        mint_b = pool.get("quoteMint")
-                    
-                    elif "tokenA" in pool and "tokenB" in pool:
-                        token_a = pool.get("tokenA", {})
-                        token_b = pool.get("tokenB", {})
-                        
-                        if isinstance(token_a, dict):
-                            mint_a = token_a.get("address") or token_a.get("mint")
-                        else:
-                            mint_a = token_a
-                            
-                        if isinstance(token_b, dict):
-                            mint_b = token_b.get("address") or token_b.get("mint")
-                        else:
-                            mint_b = token_b
-                    
-                    if not mint_a or not mint_b:
-                        continue
-                    
-                    # FIXED: Determine new token
-                    new_token = None
-                    if mint_a in [self.sol_mint, self.usdc_mint]:
-                        if mint_b and mint_b not in [self.sol_mint, self.usdc_mint]:
-                            new_token = mint_b
-                    elif mint_b in [self.sol_mint, self.usdc_mint]:
-                        if mint_a and mint_a not in [self.sol_mint, self.usdc_mint]:
-                            new_token = mint_a
-                    
-                    if new_token and self._is_valid_solana_address(new_token):
-                        tokens.append(new_token)
-                        logger.info(f"🎯 Raydium NEW: {new_token[:8]}... (TVL: ${tvl_value:,.0f})")
-                        
-                except Exception as e:
-                    logger.debug(f"Error parsing Raydium pool: {e}")
-                    continue
-            
-            return tokens
-            
-        except Exception as e:
-            logger.error(f"❌ Error parsing Raydium response: {e}")
-            return []
-
-    # FIXED: Use enhanced discovery methods
-    async def pumpfun_discovery(self) -> List[str]:
-        """Pump.fun discovery with enhanced fallback support"""
-        return await self.pumpfun_discovery_enhanced()
-
-    async def dexscreener_discovery(self) -> List[str]:
-        """DexScreener discovery with Brotli fix and enhanced fallback support"""
-        return await self.dexscreener_discovery_enhanced()
-
-    async def raydium_discovery(self) -> List[str]:
-        """Raydium discovery with corrected response parsing"""
-        return await self.raydium_discovery_enhanced()
 
     def filter_tokens_enhanced(self, tokens: List[str]) -> List[str]:
         """Enhanced token filtering with blacklist checking"""
@@ -1232,17 +910,15 @@ class SolanaTradingBot:
         blacklisted_count = 0
         
         for token in tokens:
-            if token and len(token) >= 32:
+            if token and len(token) == 44:
                 if token in self.token_blacklist:
                     blacklisted_count += 1
                     continue
                 elif token not in skip_tokens:
                     if hasattr(self, 'recently_traded') and token not in self.recently_traded:
-                        if self._is_valid_solana_address(token):
-                            filtered.append(token)
+                        filtered.append(token)
                     elif not hasattr(self, 'recently_traded'):
-                        if self._is_valid_solana_address(token):
-                            filtered.append(token)
+                        filtered.append(token)
         
         logger.info(f"🔧 Filtered {len(tokens)} → {len(filtered)} tokens")
         logger.info(f"🚫 Blocked {blacklisted_count} blacklisted tokens")
@@ -1251,12 +927,12 @@ class SolanaTradingBot:
         return filtered
 
     async def discover_new_tokens(self) -> List[str]:
-        """FIXED: Enhanced discovery with better error handling"""
+        """Enhanced discovery with simple fallback endpoints"""
         try:
-            logger.info("🚀 Starting enhanced token discovery...")
+            logger.info("🚀 Starting enhanced token discovery with fallbacks...")
             new_tokens = []
             
-            # FIXED: Phase 1 - Enhanced Pump.fun Discovery
+            # Method 1: Enhanced Pump.fun (with fallbacks)
             try:
                 logger.info("📍 Phase 1: Enhanced Pump.fun Discovery")
                 pumpfun_tokens = await self.pumpfun_discovery()
@@ -1266,7 +942,7 @@ class SolanaTradingBot:
                 logger.error(f"❌ Pump.fun discovery failed: {e}")
                 pumpfun_tokens = []
             
-            # FIXED: Phase 2 - Enhanced DexScreener Discovery
+            # Method 2: Enhanced DexScreener (with fallbacks)
             try:
                 logger.info("📍 Phase 2: Enhanced DexScreener Discovery")
                 dexscreener_tokens = await self.dexscreener_discovery()
@@ -1276,7 +952,7 @@ class SolanaTradingBot:
                 logger.error(f"❌ DexScreener discovery failed: {e}")
                 dexscreener_tokens = []
             
-            # FIXED: Phase 3 - Enhanced Raydium Discovery
+            # Method 3: Enhanced Raydium (with fallbacks)
             try:
                 logger.info("📍 Phase 3: Enhanced Raydium Discovery")
                 raydium_tokens = await self.raydium_discovery()
@@ -1286,11 +962,9 @@ class SolanaTradingBot:
                 logger.error(f"❌ Raydium discovery failed: {e}")
                 raydium_tokens = []
             
-            # FIXED: Enhanced filtering and prioritization
             unique_tokens = list(set(new_tokens))
             filtered_tokens = self.filter_tokens_enhanced(unique_tokens)
             
-            # Prioritize Pump.fun tokens (newest)
             prioritized_tokens = []
             for token in filtered_tokens:
                 if token in pumpfun_tokens:
@@ -1406,7 +1080,7 @@ class SolanaTradingBot:
                 profit_usdc = expected_usdc - original_usdc
                 profit_percent = (profit_usdc / original_usdc) * 100
                 
-                # BLACKLIST CHECK
+                # BLACKLIST CHECK: Uses BLACKLIST_THRESHOLD environment variable
                 if profit_percent <= -self.blacklist_threshold:
                     self.add_to_blacklist(
                         token_address, 
@@ -1462,6 +1136,7 @@ class SolanaTradingBot:
                         
                         logger.info(f"📈 Position {token_address[:8]}: {profit_percent:+.2f}% (Current: ${current_value/1_000_000:.2f}, Entry: ${entry_value/1_000_000:.2f})")
                         
+                        # Uses PROFIT_TARGET environment variable
                         if profit_percent >= self.profit_target:
                             logger.info(f"🎯 PROFIT TARGET HIT: {profit_percent:.2f}% >= {self.profit_target}%")
                             success = await self.sell_position_verified(token_address, position, current_value)
@@ -1470,6 +1145,7 @@ class SolanaTradingBot:
                             else:
                                 logger.error(f"❌ Failed to sell position")
                         
+                        # Uses STOP_LOSS_PERCENT environment variable
                         elif profit_percent <= -self.stop_loss_percent:
                             logger.warning(f"🛑 STOP LOSS HIT: {profit_percent:.2f}% <= -{self.stop_loss_percent}%")
                             success = await self.sell_position_verified(token_address, position, current_value)
@@ -1595,26 +1271,22 @@ class SolanaTradingBot:
             logger.info("💸 Bot is now operational and ready for REAL TRADING!")
             logger.info(f"💰 Will trade REAL MONEY: ${self.trade_amount/1_000_000} per trade")
         else:
-            logger.info("🎯 Bot is now operational in SIMULATION mode")
-            logger.info(f"💡 Will simulate trades: ${self.trade_amount/1_000_000} per trade")
+            logger.info("🎯 Bot is now operational in SIMULATION mode!")
+            logger.info(f"💰 Simulating trades with ${self.trade_amount/1_000_000} amounts")
+        
+        logger.info(f"🔍 Looking for NEW token opportunities...")
         
         await self.main_trading_loop()
 
-# FIXED: Enhanced main function with better error handling
 async def main():
-    """Main function to run the trading bot"""
+    """Entry point"""
     try:
         bot = SolanaTradingBot()
         await bot.run()
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot shutdown requested by user")
     except Exception as e:
-        logger.error(f"❌ Critical error: {e}")
-        logger.error("🔄 Bot will attempt to restart...")
-        await asyncio.sleep(5)
-        # In production, you might want to restart the bot here
+        logger.error(f"❌ Fatal error: {e}")
     finally:
-        logger.info("👋 Bot shutdown complete")
+        logger.info("🏁 Bot shutdown complete")
 
 if __name__ == "__main__":
     asyncio.run(main())

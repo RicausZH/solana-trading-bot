@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Starting Solana Trading Bot..."
+echo "Starting Solana Trading Bot with Jupiter API fixes..."
 
 # Navigate to source directory
 cd /app/src

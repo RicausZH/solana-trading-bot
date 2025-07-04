@@ -1,6 +1,8 @@
-# requirements.txt - MINIMAL VERSION THAT WORKS
-solana==0.30.2
+# requirements.txt - UPDATED VERSION WITH FIXES
+solana==0.34.0
+solders==0.21.0
 aiohttp==3.9.1
 python-dotenv==1.0.0
 base58==2.1.1
 requests==2.31.0
+asyncio-mqtt==0.16.1

@@ -1,4 +1,4 @@
->#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Enhanced Solana Trading Bot - Official DexScreener API Integration
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet when enabled

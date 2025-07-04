@@ -1,4 +1,3 @@
-# push update
 import asyncio
 import aiohttp
 import logging
@@ -7,6 +6,7 @@ from aiohttp import ClientSession
 from solana.rpc.async_api import AsyncClient
 from solders.pubkey import Pubkey
 from config import Config
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -26,57 +26,56 @@ class FraudDetector:
     
     async def analyze_token_safety(self, token_address: str) -> Tuple[bool, Dict]:
         """
-        Comprehensive token safety analysis using reliable alternatives
+        Comprehensive token safety analysis using reliable alternatives to QuillAI
         Returns: (is_safe, analysis_report)
         """
         logger.info(f"🔍 Analyzing token safety: {token_address}")
         
         try:
-            # Run all analysis methods in parallel
+            # Run all analysis methods in parallel (NO QuillAI)
             results = await asyncio.gather(
-                self.rugcheck_analysis(token_address),
-                self.dexscreener_analysis(token_address),
-                self.birdeye_analysis(token_address),
-                self.goplus_analysis(token_address),
-                self.rpc_analysis(token_address),
-                self.pattern_analysis(token_address),
+                self.rugcheck_analysis(token_address),      # 35% weight
+                self.dexscreener_analysis(token_address),   # 30% weight  
+                self.birdeye_analysis(token_address),       # 20% weight
+                self.rpc_analysis(token_address),           # 10% weight
+                self.pattern_analysis(token_address),       # 5% weight
                 return_exceptions=True
             )
             
-            rugcheck_result, dexscreener_result, birdeye_result, goplus_result, rpc_result, pattern_result = results
+            rugcheck_result, dexscreener_result, birdeye_result, rpc_result, pattern_result = results
             
-            # Initialize scores and weights
+            # Initialize weighted scoring
             weighted_score = 0
             total_weight = 0
             analysis_report = {
                 'token_address': token_address,
-                'timestamp': asyncio.get_event_loop().time(),
+                'timestamp': time.time(),
                 'checks': {}
             }
             
-            # Process RugCheck results (30% weight)
+            # Process RugCheck results (35% weight)
             if isinstance(rugcheck_result, dict) and not isinstance(rugcheck_result, Exception):
                 analysis_report['checks']['rugcheck'] = rugcheck_result
                 score = rugcheck_result.get('score', 0.30)
-                weighted_score += score * 0.30
-                total_weight += 0.30
+                weighted_score += score * 0.35
+                total_weight += 0.35
             else:
                 logger.warning(f"RugCheck error: {rugcheck_result}")
                 analysis_report['checks']['rugcheck'] = {'error': str(rugcheck_result), 'score': 0.30}
-                weighted_score += 0.30 * 0.30
-                total_weight += 0.30
+                weighted_score += 0.30 * 0.35
+                total_weight += 0.35
             
-            # Process DexScreener results (25% weight)
+            # Process DexScreener results (30% weight)
             if isinstance(dexscreener_result, dict) and not isinstance(dexscreener_result, Exception):
                 analysis_report['checks']['dexscreener'] = dexscreener_result
                 score = dexscreener_result.get('score', 0.20)
-                weighted_score += score * 0.25
-                total_weight += 0.25
+                weighted_score += score * 0.30
+                total_weight += 0.30
             else:
                 logger.warning(f"DexScreener error: {dexscreener_result}")
                 analysis_report['checks']['dexscreener'] = {'error': str(dexscreener_result), 'score': 0.20}
-                weighted_score += 0.20 * 0.25
-                total_weight += 0.25
+                weighted_score += 0.20 * 0.30
+                total_weight += 0.30
             
             # Process Birdeye results (20% weight)
             if isinstance(birdeye_result, dict) and not isinstance(birdeye_result, Exception):
@@ -90,41 +89,29 @@ class FraudDetector:
                 weighted_score += 0.25 * 0.20
                 total_weight += 0.20
             
-            # Process GoPlus results (15% weight)
-            if isinstance(goplus_result, dict) and not isinstance(goplus_result, Exception):
-                analysis_report['checks']['goplus'] = goplus_result
-                score = goplus_result.get('score', 0.35)
-                weighted_score += score * 0.15
-                total_weight += 0.15
-            else:
-                logger.warning(f"GoPlus error: {goplus_result}")
-                analysis_report['checks']['goplus'] = {'error': str(goplus_result), 'score': 0.35}
-                weighted_score += 0.35 * 0.15
-                total_weight += 0.15
-            
-            # Process RPC analysis results (8% weight)
+            # Process RPC analysis results (10% weight)
             if isinstance(rpc_result, dict) and not isinstance(rpc_result, Exception):
                 analysis_report['checks']['rpc_analysis'] = rpc_result
-                score = rpc_result.get('score', 0.39)
-                weighted_score += score * 0.08
-                total_weight += 0.08
+                score = rpc_result.get('score', 0.40)
+                weighted_score += score * 0.10
+                total_weight += 0.10
             else:
                 logger.warning(f"RPC analysis error: {rpc_result}")
-                analysis_report['checks']['rpc_analysis'] = {'error': str(rpc_result), 'score': 0.39}
-                weighted_score += 0.39 * 0.08
-                total_weight += 0.08
+                analysis_report['checks']['rpc_analysis'] = {'error': str(rpc_result), 'score': 0.40}
+                weighted_score += 0.40 * 0.10
+                total_weight += 0.10
             
-            # Process Pattern analysis results (2% weight)
+            # Process Pattern analysis results (5% weight)
             if isinstance(pattern_result, dict) and not isinstance(pattern_result, Exception):
                 analysis_report['checks']['pattern_analysis'] = pattern_result
                 score = pattern_result.get('score', 0.60)
-                weighted_score += score * 0.02
-                total_weight += 0.02
+                weighted_score += score * 0.05
+                total_weight += 0.05
             else:
                 logger.warning(f"Pattern analysis error: {pattern_result}")
                 analysis_report['checks']['pattern_analysis'] = {'error': str(pattern_result), 'score': 0.60}
-                weighted_score += 0.60 * 0.02
-                total_weight += 0.02
+                weighted_score += 0.60 * 0.05
+                total_weight += 0.05
             
             # Calculate final safety score
             final_score = weighted_score / total_weight if total_weight > 0 else 0
@@ -132,20 +119,43 @@ class FraudDetector:
             
             analysis_report['safety_score'] = final_score
             analysis_report['is_safe'] = is_safe
-            analysis_report['recommendation'] = 'SAFE' if is_safe else 'RISKY' if final_score >= 0.50 else 'UNSAFE'
+            analysis_report['recommendation'] = 'SAFE' if is_safe else 'RISKY' if final_score >= 0.45 else 'UNSAFE'
             
-            # Log detailed results
+            # Log detailed results with proper service names
             logger.info(f"🔒 SAFETY REPORT for {token_address[:8]}:")
             
             # Log individual service scores
-            for service, data in analysis_report['checks'].items():
-                if isinstance(data, dict):
-                    service_score = data.get('score', 0)
-                    message = data.get('message', data.get('error', 'Analysis complete'))
-                    service_name = service.replace('_', ' ').title()
-                    logger.info(f"   {service_name:12}: {service_score:.2f} - {message}")
+            if 'rugcheck' in analysis_report['checks']:
+                data = analysis_report['checks']['rugcheck']
+                score = data.get('score', 0.30)
+                message = data.get('message', data.get('error', 'Analysis complete'))
+                logger.info(f"   RugCheck:   {score:.2f} - {message}")
             
-            logger.info(f"   FINAL:      {final_score:.2f} ({'✓ SAFE' if is_safe else '⚠️ RISKY' if final_score >= 0.50 else '❌ UNSAFE'})")
+            if 'dexscreener' in analysis_report['checks']:
+                data = analysis_report['checks']['dexscreener']
+                score = data.get('score', 0.20)
+                message = data.get('message', data.get('error', 'Analysis complete'))
+                logger.info(f"   DexScreener:{score:.2f} - {message}")
+            
+            if 'birdeye' in analysis_report['checks']:
+                data = analysis_report['checks']['birdeye']
+                score = data.get('score', 0.25)
+                message = data.get('message', data.get('error', 'Analysis complete'))
+                logger.info(f"   Birdeye:    {score:.2f} - {message}")
+            
+            if 'rpc_analysis' in analysis_report['checks']:
+                data = analysis_report['checks']['rpc_analysis']
+                score = data.get('score', 0.40)
+                message = data.get('message', data.get('error', 'Analysis complete'))
+                logger.info(f"   RPC Check:  {score:.2f} - {message}")
+            
+            if 'pattern_analysis' in analysis_report['checks']:
+                data = analysis_report['checks']['pattern_analysis']
+                score = data.get('score', 0.60)
+                message = data.get('message', data.get('error', 'Analysis complete'))
+                logger.info(f"   Pattern:    {score:.2f} - {message}")
+            
+            logger.info(f"   FINAL:      {final_score:.2f} ({'✓ SAFE' if is_safe else '⚠️ RISKY' if final_score >= 0.45 else '❌ UNSAFE'})")
             
             return is_safe, analysis_report
             
@@ -154,7 +164,7 @@ class FraudDetector:
             return False, {'error': str(e), 'is_safe': False}
     
     async def rugcheck_analysis(self, token_address: str) -> Dict:
-        """RugCheck.xyz API analysis - FREE and RELIABLE"""
+        """RugCheck.xyz API analysis - FREE and RELIABLE (Replaces QuillAI)"""
         try:
             url = f"{self.config.RUGCHECK_API}/{token_address}/report"
             headers = {
@@ -174,27 +184,33 @@ class FraudDetector:
                     risks = data.get('risks', [])
                     score = data.get('score', 0)  # 0-100 scale
                     
-                    # Analyze specific risks
-                    high_risk_count = sum(1 for risk in risks if risk.get('level') == 'high')
-                    medium_risk_count = sum(1 for risk in risks if risk.get('level') == 'medium')
+                    # Analyze risk severity
+                    critical_risks = [r for r in risks if r.get('level', '').lower() in ['critical', 'high', 'danger']]
+                    warning_risks = [r for r in risks if r.get('level', '').lower() in ['warning', 'medium']]
                     
                     # Convert to our scoring system (0-1 scale)
-                    if score >= 80 and high_risk_count == 0:
+                    if score >= 80 and len(critical_risks) == 0:
                         normalized_score = 0.85
                         is_safe = True
-                    elif score >= 60 and high_risk_count == 0:
+                        status = "✅ Safe"
+                    elif score >= 60 and len(critical_risks) == 0:
                         normalized_score = 0.65
                         is_safe = True
-                    elif score >= 40 and high_risk_count <= 1:
+                        status = "⚠️ Caution"
+                    elif score >= 40 and len(critical_risks) <= 1:
                         normalized_score = 0.45
                         is_safe = False
+                        status = "⚠️ Risky"
                     else:
                         normalized_score = 0.25
                         is_safe = False
+                        status = "❌ Unsafe"
                     
-                    risk_summary = f"Score: {score}/100, Risks: {len(risks)}"
-                    if high_risk_count > 0:
-                        risk_summary += f", High: {high_risk_count}"
+                    message = f"{status} - Score: {score}/100"
+                    if critical_risks:
+                        message += f", Critical: {len(critical_risks)}"
+                    if warning_risks:
+                        message += f", Warnings: {len(warning_risks)}"
                     
                     return {
                         'service': 'rugcheck',
@@ -202,23 +218,25 @@ class FraudDetector:
                         'score': normalized_score,
                         'risks': risks,
                         'raw_score': score,
-                        'high_risk_count': high_risk_count,
-                        'medium_risk_count': medium_risk_count,
-                        'message': risk_summary
+                        'critical_risk_count': len(critical_risks),
+                        'warning_risk_count': len(warning_risks),
+                        'message': message
                     }
                 elif response.status == 429:
                     return {
                         'service': 'rugcheck',
                         'is_safe': False,
                         'score': 0.30,
-                        'error': 'Rate limited - too many requests'
+                        'error': 'Rate limited',
+                        'message': 'RugCheck rate limited'
                     }
                 else:
                     return {
                         'service': 'rugcheck',
                         'is_safe': False,
                         'score': 0.30,
-                        'error': f'API returned status {response.status}'
+                        'error': f'API returned status {response.status}',
+                        'message': f'RugCheck API error: {response.status}'
                     }
                     
         except asyncio.TimeoutError:
@@ -226,18 +244,20 @@ class FraudDetector:
                 'service': 'rugcheck',
                 'is_safe': False,
                 'score': 0.30,
-                'error': 'Request timeout'
+                'error': 'Request timeout',
+                'message': 'RugCheck timeout'
             }
         except Exception as e:
             return {
                 'service': 'rugcheck',
                 'is_safe': False,
                 'score': 0.30,
-                'error': str(e)
+                'error': str(e),
+                'message': f'RugCheck error: {str(e)[:50]}'
             }
     
     async def dexscreener_analysis(self, token_address: str) -> Dict:
-        """DexScreener API analysis - FREE and COMPREHENSIVE"""
+        """DexScreener API analysis - FREE Market Data Analysis"""
         try:
             url = f"{self.config.DEXSCREENER_API}/{token_address}"
             
@@ -246,85 +266,105 @@ class FraudDetector:
                     data = await response.json()
                     pairs = data.get('pairs', [])
                     
-                    if pairs:
-                        # Analyze the best pair (highest liquidity)
+                    if pairs and len(pairs) > 0:
+                        # Find the pair with highest liquidity
                         best_pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0)))
                         
-                        # Extract metrics
+                        # Extract key metrics
                         liquidity_usd = float(best_pair.get('liquidity', {}).get('usd', 0))
                         volume_24h = float(best_pair.get('volume', {}).get('h24', 0))
                         fdv = float(best_pair.get('fdv', 0))
                         price_change_24h = float(best_pair.get('priceChange', {}).get('h24', 0))
                         
-                        # Safety criteria
-                        has_liquidity = liquidity_usd >= self.config.MIN_LIQUIDITY_USD
-                        has_volume = volume_24h >= self.config.MIN_VOLUME_24H
+                        # Evaluate safety criteria
+                        has_good_liquidity = liquidity_usd >= self.config.MIN_LIQUIDITY_USD
+                        has_good_volume = volume_24h >= self.config.MIN_VOLUME_24H
                         has_fdv = fdv > 0
-                        reasonable_volatility = abs(price_change_24h) <= 500  # Not more than 500% change
+                        reasonable_volatility = abs(price_change_24h) <= 300  # Not extremely volatile
                         
-                        # Calculate score
-                        score = 0.10  # Base score
+                        # Calculate score based on market health
+                        score = 0.15  # Base score
                         
-                        if has_liquidity:
-                            score += 0.30
-                        if has_volume:
-                            score += 0.25
+                        if has_good_liquidity:
+                            score += 0.35  # Strong weight for liquidity
+                        elif liquidity_usd >= 1000:  # Minimum acceptable
+                            score += 0.20
+                        
+                        if has_good_volume:
+                            score += 0.25  # Good volume
+                        elif volume_24h >= 100:  # Some activity
+                            score += 0.10
+                        
                         if has_fdv:
-                            score += 0.15
+                            score += 0.15  # Has market cap
+                        
                         if reasonable_volatility:
-                            score += 0.10
-                        if liquidity_usd > 50000:  # Bonus for high liquidity
-                            score += 0.10
+                            score += 0.10  # Not too volatile
                         
-                        is_safe = has_liquidity and has_volume and has_fdv and reasonable_volatility
+                        # Bonus for very high liquidity
+                        if liquidity_usd > 50000:
+                            score += 0.05
                         
-                        message = f"Liquidity: ${liquidity_usd:,.0f}, Volume: ${volume_24h:,.0f}"
+                        is_safe = has_good_liquidity and has_good_volume and reasonable_volatility
+                        
+                        # Create descriptive message
+                        message = f"Liq: ${liquidity_usd:,.0f}, Vol: ${volume_24h:,.0f}"
+                        if price_change_24h != 0:
+                            message += f", 24h: {price_change_24h:+.1f}%"
                         if not reasonable_volatility:
-                            message += f", High volatility: {price_change_24h:.1f}%"
+                            message += " ⚠️ High volatility"
+                        if not has_good_liquidity:
+                            message += " ⚠️ Low liquidity"
                         
                         return {
                             'service': 'dexscreener',
                             'is_safe': is_safe,
-                            'score': score,
+                            'score': min(score, 1.0),  # Cap at 1.0
                             'liquidity_usd': liquidity_usd,
                             'volume_24h': volume_24h,
                             'fdv': fdv,
                             'price_change_24h': price_change_24h,
                             'pair_count': len(pairs),
+                            'has_good_liquidity': has_good_liquidity,
+                            'has_good_volume': has_good_volume,
                             'message': message
                         }
                     else:
                         return {
                             'service': 'dexscreener',
                             'is_safe': False,
-                            'score': 0.15,
-                            'error': 'No trading pairs found'
+                            'score': 0.10,
+                            'error': 'No trading pairs found',
+                            'message': 'No trading pairs found'
                         }
                 else:
                     return {
                         'service': 'dexscreener',
                         'is_safe': False,
-                        'score': 0.15,
-                        'error': f'API returned status {response.status}'
+                        'score': 0.10,
+                        'error': f'API returned status {response.status}',
+                        'message': f'DexScreener API error: {response.status}'
                     }
                     
         except asyncio.TimeoutError:
             return {
                 'service': 'dexscreener',
                 'is_safe': False,
-                'score': 0.15,
-                'error': 'Request timeout'
+                'score': 0.10,
+                'error': 'Request timeout',
+                'message': 'DexScreener timeout'
             }
         except Exception as e:
             return {
                 'service': 'dexscreener',
                 'is_safe': False,
-                'score': 0.15,
-                'error': str(e)
+                'score': 0.10,
+                'error': str(e),
+                'message': f'DexScreener error: {str(e)[:50]}'
             }
     
     async def birdeye_analysis(self, token_address: str) -> Dict:
-        """Birdeye API analysis - PROFESSIONAL GRADE"""
+        """Birdeye API analysis - Professional Security Analysis"""
         try:
             url = f"{self.config.BIRDEYE_API}?address={token_address}"
             headers = {
@@ -340,9 +380,8 @@ class FraudDetector:
                 if response.status == 200:
                     data = await response.json()
                     
-                    # Parse Birdeye security data
-                    success = data.get('success', False)
-                    if success:
+                    # Check if API returned success
+                    if data.get('success', False):
                         security_data = data.get('data', {})
                         
                         # Extract security indicators
@@ -350,21 +389,29 @@ class FraudDetector:
                         is_rugpull = security_data.get('isRugpull', False)
                         risk_level = security_data.get('riskLevel', 'unknown').lower()
                         
-                        # Calculate safety
-                        is_safe = not is_honeypot and not is_rugpull and risk_level in ['low', 'safe']
-                        
-                        if is_safe:
-                            score = 0.80
-                        elif risk_level == 'medium':
-                            score = 0.50
-                        else:
-                            score = 0.20
-                        
-                        message = f"Risk: {risk_level}"
+                        # Determine safety and score
+                        issues = []
                         if is_honeypot:
-                            message += ", Honeypot detected"
+                            issues.append("Honeypot")
                         if is_rugpull:
-                            message += ", Rugpull risk"
+                            issues.append("Rugpull risk")
+                        
+                        if not issues and risk_level in ['low', 'safe']:
+                            is_safe = True
+                            score = 0.80
+                            message = "✅ Security checks passed"
+                        elif not issues and risk_level == 'medium':
+                            is_safe = False
+                            score = 0.50
+                            message = "⚠️ Medium risk level"
+                        elif issues:
+                            is_safe = False
+                            score = 0.20
+                            message = f"❌ {', '.join(issues)}"
+                        else:
+                            is_safe = False
+                            score = 0.30
+                            message = f"⚠️ Risk level: {risk_level}"
                         
                         return {
                             'service': 'birdeye',
@@ -373,6 +420,7 @@ class FraudDetector:
                             'is_honeypot': is_honeypot,
                             'is_rugpull': is_rugpull,
                             'risk_level': risk_level,
+                            'issues': issues,
                             'message': message
                         }
                     else:
@@ -380,21 +428,24 @@ class FraudDetector:
                             'service': 'birdeye',
                             'is_safe': False,
                             'score': 0.25,
-                            'error': 'API returned unsuccessful response'
+                            'error': 'API returned unsuccessful response',
+                            'message': 'Birdeye API unsuccessful'
                         }
                 elif response.status == 429:
                     return {
                         'service': 'birdeye',
                         'is_safe': False,
                         'score': 0.25,
-                        'error': 'Rate limited'
+                        'error': 'Rate limited',
+                        'message': 'Birdeye rate limited'
                     }
                 else:
                     return {
                         'service': 'birdeye',
                         'is_safe': False,
                         'score': 0.25,
-                        'error': f'API returned status {response.status}'
+                        'error': f'API returned status {response.status}',
+                        'message': f'Birdeye API error: {response.status}'
                     }
                     
         except asyncio.TimeoutError:
@@ -402,97 +453,16 @@ class FraudDetector:
                 'service': 'birdeye',
                 'is_safe': False,
                 'score': 0.25,
-                'error': 'Request timeout'
+                'error': 'Request timeout',
+                'message': 'Birdeye timeout'
             }
         except Exception as e:
             return {
                 'service': 'birdeye',
                 'is_safe': False,
                 'score': 0.25,
-                'error': str(e)
-            }
-    
-    async def goplus_analysis(self, token_address: str) -> Dict:
-        """GoPlus API analysis - BACKUP SECURITY CHECK"""
-        try:
-            url = f"{self.config.GOPLUS_API}/token_security/solana"
-            params = {'contract_addresses': token_address}
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            async with self.session.get(url, params=params, headers=headers, timeout=15) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    
-                    token_data = data.get('result', {}).get(token_address, {})
-                    
-                    if token_data:
-                        # Analyze GoPlus security data
-                        is_honeypot = token_data.get('is_honeypot', '0') == '1'
-                        is_blacklisted = token_data.get('is_blacklisted', '0') == '1'
-                        is_whitelisted = token_data.get('is_whitelisted', '0') == '1'
-                        can_take_back_ownership = token_data.get('can_take_back_ownership', '0') == '1'
-                        
-                        # Calculate safety
-                        is_safe = not is_honeypot and not is_blacklisted and not can_take_back_ownership
-                        
-                        if is_safe and is_whitelisted:
-                            score = 0.75
-                        elif is_safe:
-                            score = 0.60
-                        else:
-                            score = 0.25
-                        
-                        issues = []
-                        if is_honeypot:
-                            issues.append("Honeypot")
-                        if is_blacklisted:
-                            issues.append("Blacklisted")
-                        if can_take_back_ownership:
-                            issues.append("Owner can take back")
-                        
-                        message = "Clean" if not issues else f"Issues: {', '.join(issues)}"
-                        
-                        return {
-                            'service': 'goplus',
-                            'is_safe': is_safe,
-                            'score': score,
-                            'is_honeypot': is_honeypot,
-                            'is_blacklisted': is_blacklisted,
-                            'is_whitelisted': is_whitelisted,
-                            'can_take_back_ownership': can_take_back_ownership,
-                            'message': message
-                        }
-                    else:
-                        return {
-                            'service': 'goplus',
-                            'is_safe': False,
-                            'score': 0.35,
-                            'error': 'Token not found in GoPlus database'
-                        }
-                else:
-                    return {
-                        'service': 'goplus',
-                        'is_safe': False,
-                        'score': 0.35,
-                        'error': f'API returned status {response.status}'
-                    }
-                    
-        except asyncio.TimeoutError:
-            return {
-                'service': 'goplus',
-                'is_safe': False,
-                'score': 0.35,
-                'error': 'Request timeout'
-            }
-        except Exception as e:
-            return {
-                'service': 'goplus',
-                'is_safe': False,
-                'score': 0.35,
-                'error': str(e)
+                'error': str(e),
+                'message': f'Birdeye error: {str(e)[:50]}'
             }
     
     async def rpc_analysis(self, token_address: str) -> Dict:
@@ -508,133 +478,156 @@ class FraudDetector:
                     'service': 'rpc_analysis',
                     'is_safe': False,
                     'score': 0.20,
-                    'error': 'Token account not found'
+                    'error': 'Token account not found',
+                    'message': 'Token account not found'
                 }
             
             account_info = response.value
             
-            # Analyze account data
+            # Analyze account characteristics
             issues = []
             good_signs = []
             
-            # Check if account has data
+            # Check account data presence
             if account_info.data is None or len(account_info.data) == 0:
                 issues.append("No metadata")
             else:
                 good_signs.append("Has metadata")
             
-            # Check account owner (should be Token Program)
+            # Verify token program ownership
             token_program = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
             if str(account_info.owner) != token_program:
                 issues.append("Non-standard owner")
             else:
-                good_signs.append("Standard token")
+                good_signs.append("Standard token program")
             
-            # Check lamports (rent)
+            # Check rent-exempt status
             if account_info.lamports < 1000000:  # Less than 0.001 SOL
-                issues.append("Low rent")
+                issues.append("Insufficient rent")
             else:
-                good_signs.append("Adequate rent")
+                good_signs.append("Rent-exempt")
             
-            # Score based on analysis
+            # Calculate safety score
             total_factors = len(issues) + len(good_signs)
-            safety_ratio = len(good_signs) / total_factors if total_factors > 0 else 0
+            if total_factors > 0:
+                safety_ratio = len(good_signs) / total_factors
+                is_safe = safety_ratio >= 0.66 and len(issues) <= 1
+                score = 0.20 + (safety_ratio * 0.60)  # Scale from 0.20 to 0.80
+            else:
+                is_safe = False
+                score = 0.20
+                safety_ratio = 0
             
-            is_safe = safety_ratio >= 0.7 and len(issues) <= 1
-            score = 0.20 + (safety_ratio * 0.60)  # Scale from 0.20 to 0.80
-            
-            message_parts = []
+            # Create status message
+            status_parts = []
             if issues:
-                message_parts.append(f"Issues: {', '.join(issues)}")
+                status_parts.append(f"Issues: {', '.join(issues)} ❌")
             if good_signs:
-                message_parts.append(f"Good: {', '.join(good_signs)}")
+                status_parts.append(f"Good: {', '.join(good_signs)} ✓")
+            
+            message = ' | '.join(status_parts) if status_parts else 'Basic RPC analysis'
             
             return {
                 'service': 'rpc_analysis',
                 'is_safe': is_safe,
                 'score': score,
-                'message': ' | '.join(message_parts),
+                'message': message,
                 'issues': issues,
                 'good_signs': good_signs,
-                'safety_ratio': safety_ratio
+                'safety_ratio': safety_ratio,
+                'lamports': account_info.lamports
             }
             
         except Exception as e:
             return {
                 'service': 'rpc_analysis',
                 'is_safe': False,
-                'score': 0.39,
-                'error': str(e)
+                'score': 0.40,
+                'error': str(e),
+                'message': f'RPC error: {str(e)[:50]}'
             }
     
     async def pattern_analysis(self, token_address: str) -> Dict:
-        """Enhanced pattern analysis for token addresses"""
+        """Pattern analysis for Solana token addresses"""
         try:
-            # Address pattern analysis
-            score_factors = []
+            # Validate address structure
+            score_components = []
             
-            # Check address length (should be 44 characters for Solana)
+            # Length check (Solana addresses are 44 characters)
             if len(token_address) == 44:
-                score_factors.append(0.3)  # Correct length
+                score_components.append(0.3)
+                length_ok = True
             else:
-                score_factors.append(0.0)
+                score_components.append(0.0)
+                length_ok = False
             
-            # Check character variety
+            # Character diversity analysis
             unique_chars = len(set(token_address))
             if unique_chars >= 25:
-                score_factors.append(0.4)  # Excellent variety
+                score_components.append(0.4)  # Excellent diversity
+                diversity_level = "excellent"
             elif unique_chars >= 20:
-                score_factors.append(0.3)  # Good variety
+                score_components.append(0.3)  # Good diversity
+                diversity_level = "good"
             elif unique_chars >= 15:
-                score_factors.append(0.2)  # Moderate variety
+                score_components.append(0.2)  # Moderate diversity
+                diversity_level = "moderate"
             else:
-                score_factors.append(0.1)  # Poor variety
+                score_components.append(0.1)  # Poor diversity
+                diversity_level = "poor"
             
-            # Check for suspicious patterns
-            suspicious_patterns = ['1111', '0000', 'aaaa', 'zzzz', 'pump', '2222', '3333']
+            # Suspicious pattern detection
+            suspicious_patterns = ['1111', '0000', 'aaaa', 'zzzz', 'pump', '2222', '3333', '4444']
             has_suspicious = any(pattern in token_address.lower() for pattern in suspicious_patterns)
             
             if not has_suspicious:
-                score_factors.append(0.2)  # No suspicious patterns
+                score_components.append(0.2)
             else:
-                score_factors.append(0.0)
+                score_components.append(0.0)
             
-            # Check case mixing
+            # Character type mixing
             has_upper = any(c.isupper() for c in token_address)
             has_lower = any(c.islower() for c in token_address)
             has_digit = any(c.isdigit() for c in token_address)
             
             if has_upper and has_lower and has_digit:
-                score_factors.append(0.1)  # Good mixing
+                score_components.append(0.1)
             else:
-                score_factors.append(0.0)
+                score_components.append(0.0)
             
             # Calculate final score
-            total_score = sum(score_factors)
+            total_score = sum(score_components)
             is_safe = total_score >= 0.7
             
-            # Create descriptive message
+            # Build descriptive message
             message_parts = []
-            if len(token_address) == 44:
+            if length_ok:
                 message_parts.append("Valid length")
-            if unique_chars >= 20:
-                message_parts.append("Good variety")
+            if diversity_level in ["good", "excellent"]:
+                message_parts.append(f"{diversity_level.title()} char diversity")
             if not has_suspicious:
                 message_parts.append("No suspicious patterns")
+            if has_upper and has_lower and has_digit:
+                message_parts.append("Good char mixing")
+            
+            message = ', '.join(message_parts) if message_parts else 'Basic pattern check'
             
             return {
                 'service': 'pattern_analysis',
                 'is_safe': is_safe,
                 'score': total_score,
-                'message': ', '.join(message_parts) if message_parts else 'Basic pattern check',
+                'message': message,
                 'unique_chars': unique_chars,
-                'has_suspicious_patterns': has_suspicious
+                'diversity_level': diversity_level,
+                'has_suspicious_patterns': has_suspicious,
+                'length_valid': length_ok
             }
             
         except Exception as e:
             return {
                 'service': 'pattern_analysis',
                 'is_safe': False,
-                'score': 0.30,
-                'error': str(e)
+                'score': 0.50,
+                'error': str(e),
+                'message': f'Pattern analysis error: {str(e)[:30]}'
             }

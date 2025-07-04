@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+# In your fraud_detector.py, add this comment at the top:
+# Updated: 2025-07-04 - Removed QuillAI completely#!/usr/bin/env python3
 """
 Solana Trading Bot - REAL TRADING VERSION
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet

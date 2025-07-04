@@ -1,24 +1,6 @@
-# requirements.txt - WORKING VERSIONS (Updated 2025-07-04)
-
-# Core Solana dependencies
-solana==0.30.2
-solders==0.21.0
-
-# HTTP and async
-aiohttp==3.9.1
-requests==2.31.0
-
-# Environment and encoding
-python-dotenv==1.0.0
-base58==2.1.1
-
-# Date/time handling
-python-dateutil==2.8.2
-
-# Optional but recommended
-urllib3==2.0.7
-certifi==2023.11.17
-charset-normalizer==3.3.2
-idna==3.6
-multidict==1.0.0
-yarl==1.9.4
+# requirements.txt - AUTO RESOLVE VERSION
+solana>=0.30.0,<0.35.0
+aiohttp>=3.8.0,<4.0.0
+requests>=2.30.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+base58>=2.1.0,<3.0.0

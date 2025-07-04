@@ -14,10 +14,10 @@ class Config:
     QUICKNODE_WSS_URL = os.getenv('QUICKNODE_WSS_URL')
     
     # Trading Configuration
-    TRADE_AMOUNT = os.getenv('TRADE_AMOUNT', '35')
-    PROFIT_TARGET = os.getenv('PROFIT_TARGET', '2.5')
-    MAX_POSITIONS = os.getenv('MAX_POSITIONS', '4')
-    SLIPPAGE_BPS = os.getenv('SLIPPAGE_BPS', '50')
+    TRADE_AMOUNT = float(os.getenv('TRADE_AMOUNT', '35'))
+    PROFIT_TARGET = float(os.getenv('PROFIT_TARGET', '2.5'))
+    MAX_POSITIONS = int(os.getenv('MAX_POSITIONS', '4'))
+    SLIPPAGE_BPS = int(os.getenv('SLIPPAGE_BPS', '50'))
     
     # Token Addresses
     USDC_MINT = os.getenv('USDC_MINT', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
@@ -38,6 +38,6 @@ class Config:
     RUGCHECK_API_KEY = os.getenv('RUGCHECK_API_KEY', '')
     
     # Safety Thresholds
-    SAFETY_THRESHOLD = float(os.getenv('SAFETY_THRESHOLD', '0.65'))
-    MIN_LIQUIDITY_USD = float(os.getenv('MIN_LIQUIDITY_USD', '5000'))
-    MIN_VOLUME_24H = float(os.getenv('MIN_VOLUME_24H', '1000'))
+    SAFETY_THRESHOLD = float(os.getenv('SAFETY_THRESHOLD', '0.55'))  # Lowered from 0.65
+    MIN_LIQUIDITY_USD = float(os.getenv('MIN_LIQUIDITY_USD', '5000'))  # $5K minimum
+    MIN_VOLUME_24H = float(os.getenv('MIN_VOLUME_24H', '1000'))  # $1K minimum daily volume

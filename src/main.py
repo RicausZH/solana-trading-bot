@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Solana Trading Bot - REAL TRADING VERSION
+Solana Trading Bot - REAL TRADING VERSION WITH TRANSACTION FIXES
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet
 Uses direct Jupiter API calls + Real blockchain transactions
 Includes: Real Token Discovery, Advanced Fraud Detection, REAL Trading, Profit Taking
-Updated: 2025-07-04 - Working Free APIs, Jupiter v6 Fixes, AMM Compatibility
+Updated: 2025-07-04 - Fixed transaction signing errors for live trading
 """
 
 import os
@@ -44,10 +44,11 @@ class SolanaTradingBot:
         self.enable_real_trading = os.getenv("ENABLE_REAL_TRADING", "false").lower() == "true"
         
         # Trading configuration
-        self.trade_amount = int(float(os.getenv("TRADE_AMOUNT", "35.0")) * 1_000_000)
-        self.profit_target = float(os.getenv("PROFIT_TARGET", "2.5"))
+        self.trade_amount = int(float(os.getenv("TRADE_AMOUNT", "6.0")) * 1_000_000)
+        self.profit_target = float(os.getenv("PROFIT_TARGET", "4.0"))
         self.max_positions = int(os.getenv("MAX_POSITIONS", "4"))
         self.slippage = int(os.getenv("SLIPPAGE_BPS", "50"))
+        self.stop_loss_percent = float(os.getenv("STOP_LOSS_PERCENT", "8.0"))
         
         # Token addresses
         self.usdc_mint = os.getenv("USDC_MINT", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
@@ -68,12 +69,13 @@ class SolanaTradingBot:
         
         # Safety thresholds
         self.safety_threshold = float(os.getenv("SAFETY_THRESHOLD", "0.55"))
-        self.min_liquidity_usd = float(os.getenv("MIN_LIQUIDITY_USD", "1500"))
-        self.min_volume_24h = float(os.getenv("MIN_VOLUME_24H", "300"))
+        self.min_liquidity_usd = float(os.getenv("MIN_LIQUIDITY_USD", "5000"))
+        self.min_volume_24h = float(os.getenv("MIN_VOLUME_24H", "1000"))
         
-        logger.info("🤖 Solana Trading Bot initialized with Free APIs")
+        logger.info("🤖 Solana Trading Bot initialized with Transaction Fixes")
         logger.info(f"💰 Trade Amount: ${self.trade_amount/1_000_000}")
         logger.info(f"🎯 Profit Target: {self.profit_target}%")
+        logger.info(f"🛑 Stop Loss: {self.stop_loss_percent}%")
         logger.info(f"📊 Max Positions: {self.max_positions}")
         logger.info(f"🔒 Safety Threshold: {self.safety_threshold}")
         logger.info(f"💧 Min Liquidity: ${self.min_liquidity_usd:,.0f}")
@@ -185,82 +187,65 @@ class SolanaTradingBot:
     def detect_amm_type(self, quote: Dict) -> str:
         """Detect AMM type from quote data"""
         try:
-            route_plan = quote.get('routePlan', [])
+            route_plan = quote.get("routePlan", [])
+            
             if not route_plan:
-                return 'unknown'
+                return "unknown"
             
-            # Check first route step
-            first_step = route_plan[0]
-            swap_info = first_step.get('swapInfo', {})
-            amm_key = swap_info.get('ammKey', '')
-            
-            # Simple heuristic based on AMM key patterns
-            if 'pump' in amm_key.lower():
-                return 'pump_fun'
-            elif len(route_plan) == 1 and 'raydium' in str(swap_info).lower():
-                return 'simple_amm'
-            else:
-                return 'complex_amm'
+            # Check for simple AMM patterns
+            if len(route_plan) == 1:
+                swap_info = route_plan[0].get("swapInfo", {})
+                amm_key = swap_info.get("ammKey", "")
                 
+                # Known simple AMM patterns
+                if "pump" in amm_key.lower() or len(route_plan) == 1:
+                    return "simple_amm"
+            
+            return "complex_amm"
+            
         except Exception as e:
-            logger.warning(f"Could not detect AMM type: {e}")
-            return 'unknown'
+            logger.warning(f"AMM detection error: {e}")
+            return "unknown"
     
     async def execute_jupiter_swap_smart(self, quote: Dict) -> Optional[str]:
-        """Smart swap execution with automatic AMM detection and fallback"""
+        """Smart swap execution with multiple configurations"""
         try:
             amm_type = self.detect_amm_type(quote)
             logger.info(f"🔍 Detected AMM type: {amm_type}")
             
-            # Try different configurations based on AMM type
-            configurations = []
+            # Configuration attempts in order of preference
+            configurations = [
+                {
+                    "useSharedAccounts": False,
+                    "asLegacyTransaction": False,
+                    "computeUnitPriceMicroLamports": "auto"
+                },
+                {
+                    "useSharedAccounts": False,
+                    "asLegacyTransaction": True,
+                    "computeUnitPriceMicroLamports": 1000
+                },
+                {
+                    "useSharedAccounts": True,
+                    "asLegacyTransaction": False,
+                    "computeUnitPriceMicroLamports": "auto"
+                }
+            ]
             
-            if amm_type == 'simple_amm' or amm_type == 'pump_fun':
-                # Simple AMMs - start with most compatible settings
-                configurations = [
-                    {
-                        "useSharedAccounts": False,
-                        "asLegacyTransaction": True,
-                        "computeUnitPriceMicroLamports": 1000
-                    },
-                    {
-                        "useSharedAccounts": False,
-                        "asLegacyTransaction": False,
-                        "computeUnitPriceMicroLamports": "auto"
-                    }
-                ]
-            else:
-                # Complex AMMs - try modern settings first
-                configurations = [
-                    {
-                        "useSharedAccounts": False,
-                        "asLegacyTransaction": False,
-                        "computeUnitPriceMicroLamports": "auto"
-                    },
-                    {
-                        "useSharedAccounts": False,
-                        "asLegacyTransaction": True,
-                        "computeUnitPriceMicroLamports": 1000
-                    },
-                    {
-                        "useSharedAccounts": True,
-                        "asLegacyTransaction": False,
-                        "computeUnitPriceMicroLamports": "auto"
-                    }
-                ]
-            
-            # Try each configuration
-            for i, config in enumerate(configurations):
-                logger.info(f"🔄 Trying configuration {i+1}/{len(configurations)}: {config}")
-                
-                result = await self.execute_jupiter_swap_with_config(quote, config)
-                if result:
-                    logger.info(f"✅ Success with configuration {i+1}")
-                    return result
-                
-                if i < len(configurations) - 1:
-                    logger.info(f"⏳ Configuration {i+1} failed, trying next...")
-                    await asyncio.sleep(1)  # Brief pause between attempts
+            for i, config in enumerate(configurations, 1):
+                try:
+                    logger.info(f"🔄 Trying configuration {i}/{len(configurations)}: {config}")
+                    
+                    result = await self.execute_jupiter_swap_with_config(quote, config)
+                    if result:
+                        logger.info(f"✅ Success with configuration {i}")
+                        return result
+                    else:
+                        logger.info(f"⏳ Configuration {i} failed, trying next...")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ Configuration {i} error: {e}")
+                    continue
             
             logger.error("❌ All swap configurations failed")
             return None
@@ -272,13 +257,11 @@ class SolanaTradingBot:
     async def execute_jupiter_swap_with_config(self, quote: Dict, config: Dict) -> Optional[str]:
         """Execute swap with specific configuration"""
         try:
-            # Build swap data with configuration
             swap_data = {
                 "quoteResponse": quote,
                 "userPublicKey": self.public_key,
                 "wrapAndUnwrapSol": True,
-                "feeAccount": None,
-                **config  # Merge in the configuration
+                **config
             }
             
             headers = {
@@ -299,11 +282,11 @@ class SolanaTradingBot:
                         
                         if transaction_data:
                             if self.enable_real_trading:
-                                # REAL TRADING - choose transaction type based on config
+                                # Determine transaction type
                                 if config.get("asLegacyTransaction", False):
                                     tx_id = await self.send_real_transaction_legacy(transaction_data)
                                 else:
-                                    tx_id = await self.send_real_transaction(transaction_data)
+                                    tx_id = await self.send_real_transaction_versioned(transaction_data)
                                 
                                 if tx_id:
                                     logger.info(f"✅ REAL SWAP EXECUTED: {tx_id}")
@@ -314,44 +297,51 @@ class SolanaTradingBot:
                                     return None
                             else:
                                 # SIMULATION MODE
-                                tx_id = f"sim_{int(time.time())}"
-                                config_type = "legacy" if config.get("asLegacyTransaction", False) else "versioned"
-                                logger.info(f"✅ SIMULATED swap ({config_type}): {tx_id}")
+                                tx_type = "legacy" if config.get("asLegacyTransaction", False) else "versioned"
+                                tx_id = f"sim_{tx_type}_{int(time.time())}"
+                                logger.info(f"✅ SIMULATED swap ({tx_type}): {tx_id}")
                                 return tx_id
                         else:
                             logger.error("❌ No transaction data in swap response")
                             return None
-                    else:
+                            
+                    elif response.status == 400:
                         error_text = await response.text()
                         logger.warning(f"⚠️ Jupiter swap failed with this config: {response.status} - {error_text}")
                         return None
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"❌ Jupiter swap failed: {response.status} - {error_text}")
+                        return None
                         
         except Exception as e:
-            logger.warning(f"⚠️ Error with this configuration: {e}")
+            logger.error(f"❌ Error executing Jupiter swap with config: {e}")
             return None
     
-    async def execute_jupiter_swap(self, quote: Dict) -> Optional[str]:
-        """Execute swap via Jupiter API - REAL OR SIMULATION"""
-        return await self.execute_jupiter_swap_smart(quote)
-    
-    async def send_real_transaction(self, transaction_data: str) -> Optional[str]:
-        """Send real transaction to Solana blockchain (Versioned)"""
+    async def send_real_transaction_versioned(self, transaction_data: str) -> Optional[str]:
+        """Send real versioned transaction to Solana blockchain - FIXED"""
         try:
             logger.warning("⚠️ SENDING REAL VERSIONED TRANSACTION WITH REAL MONEY")
             
-            # Import required modules
             from solana.rpc.async_api import AsyncClient
             from solders.keypair import Keypair
             from solders.transaction import VersionedTransaction
+            from solders.message import to_bytes_versioned
             import base64
             
             # Decode transaction
             transaction_bytes = base64.b64decode(transaction_data)
             versioned_tx = VersionedTransaction.from_bytes(transaction_bytes)
             
-            # Sign with keypair
+            # Create keypair
             keypair = Keypair.from_base58_string(self.private_key)
-            signed_tx = versioned_tx.sign([keypair])
+            
+            # Sign the transaction properly
+            message_bytes = to_bytes_versioned(versioned_tx.message)
+            signature = keypair.sign_message(message_bytes)
+            
+            # Create signed transaction
+            signed_tx = VersionedTransaction.populate(versioned_tx.message, [signature])
             
             # Send to blockchain
             client = AsyncClient(self.rpc_url)
@@ -365,7 +355,8 @@ class SolanaTradingBot:
                 max_retries=3
             )
             
-            result = await client.send_transaction(signed_tx, opts)
+            # Send the signed transaction
+            result = await client.send_raw_transaction(bytes(signed_tx), opts)
             
             if result.value:
                 logger.info(f"✅ REAL VERSIONED TRANSACTION SENT: {result.value}")
@@ -379,7 +370,7 @@ class SolanaTradingBot:
             return None
     
     async def send_real_transaction_legacy(self, transaction_data: str) -> Optional[str]:
-        """Send real transaction using legacy format"""
+        """Send real legacy transaction to Solana blockchain - FIXED"""
         try:
             logger.warning("⚠️ SENDING REAL LEGACY TRANSACTION WITH REAL MONEY")
             
@@ -392,8 +383,10 @@ class SolanaTradingBot:
             transaction_bytes = base64.b64decode(transaction_data)
             transaction = Transaction.deserialize(transaction_bytes)
             
-            # Sign with keypair
+            # Create keypair
             keypair = Keypair.from_base58_string(self.private_key)
+            
+            # Sign with keypair (correct method)
             transaction.sign(keypair)
             
             # Send to blockchain
@@ -408,6 +401,7 @@ class SolanaTradingBot:
                 max_retries=3
             )
             
+            # Send transaction with correct parameters
             result = await client.send_transaction(transaction, opts)
             
             if result.value:
@@ -431,31 +425,20 @@ class SolanaTradingBot:
             
             logger.info(f"🔍 Analyzing token safety: {token_address}")
             
-            # Try to use fraud detector with proper error handling
+            # Import and use fraud detector
             try:
-                # Import here to avoid import errors at startup
-                import sys
-                import os
-                sys.path.append(os.path.dirname(__file__))
-                
                 from fraud_detector import FraudDetector
                 from config import Config
                 
                 config = Config()
-                fraud_detector = FraudDetector(config)
-                
-                # Use async context manager properly
-                async with fraud_detector:
-                    is_safe, analysis_report = await fraud_detector.analyze_token_safety(token_address)
+                async with FraudDetector(config) as detector:
+                    is_safe, analysis_report = await detector.analyze_token_safety(token_address)
                     confidence = analysis_report.get('safety_score', 0.0)
                     
-                    logger.info(f"✅ Advanced fraud detection completed: {confidence:.2f}")
                     return is_safe, confidence
-                    
-            except Exception as import_error:
-                # Log the specific import error for debugging
-                logger.warning(f"⚠️ Fraud detector import failed: {import_error}")
-                logger.info("🔄 Falling back to simplified analysis")
+            except ImportError:
+                # Fallback if fraud_detector import fails
+                logger.warning("⚠️ Fraud detector import failed, using simplified analysis")
                 return await self.simplified_safety_check(token_address)
             
         except Exception as e:
@@ -681,7 +664,7 @@ class SolanaTradingBot:
         return filtered
     
     async def monitor_positions(self):
-        """Monitor active positions for profit targets"""
+        """Monitor active positions for profit targets and stop losses"""
         try:
             for token_address, position in list(self.active_positions.items()):
                 # Check current price
@@ -700,11 +683,12 @@ class SolanaTradingBot:
                     
                     # Check if profit target hit
                     if profit_percent >= self.profit_target:
+                        logger.info(f"🎯 Profit target hit: {profit_percent:.2f}% >= {self.profit_target}%")
                         await self.sell_position(token_address, position, current_value)
                     
-                    # Check for stop loss (optional)
-                    elif profit_percent <= -10:  # 10% stop loss
-                        logger.warning(f"⚠️ Stop loss triggered for {token_address[:8]}")
+                    # Check for stop loss
+                    elif profit_percent <= -self.stop_loss_percent:
+                        logger.warning(f"🛑 Stop loss triggered: {profit_percent:.2f}% <= -{self.stop_loss_percent}%")
                         await self.sell_position(token_address, position, current_value)
                         
         except Exception as e:
@@ -720,7 +704,7 @@ class SolanaTradingBot:
             )
             
             if quote:
-                tx_id = await self.execute_jupiter_swap(quote)
+                tx_id = await self.execute_jupiter_swap_smart(quote)
                 if tx_id:
                     profit = current_value - position["usdc_amount"]
                     profit_percent = (profit / position["usdc_amount"]) * 100
@@ -763,7 +747,7 @@ class SolanaTradingBot:
                 return False
             
             # Execute the swap
-            tx_id = await self.execute_jupiter_swap(quote)
+            tx_id = await self.execute_jupiter_swap_smart(quote)
             if not tx_id:
                 return False
             

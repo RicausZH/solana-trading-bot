@@ -26,7 +26,7 @@ class FraudDetector:
     
     async def analyze_token_safety(self, token_address: str) -> Tuple[bool, Dict]:
         """
-        Comprehensive token safety analysis using reliable APIs
+        Comprehensive token safety analysis using reliable FREE APIs
         Returns: (is_safe, analysis_report)
         """
         logger.info(f"🔍 Analyzing token safety: {token_address}")
@@ -34,16 +34,17 @@ class FraudDetector:
         try:
             # Run all working analysis methods in parallel
             results = await asyncio.gather(
-                self.dextools_analysis(token_address),
-                self.dexscreener_analysis(token_address),
-                self.rpc_analysis(token_address),
-                self.pattern_analysis(token_address),
+                self.dexscreener_analysis(token_address),   # Market data
+                self.solscan_analysis(token_address),       # NEW - Free Solana data
+                self.jupiter_liquidity_check(token_address), # NEW - Jupiter API check
+                self.rpc_analysis(token_address),           # On-chain analysis
+                self.pattern_analysis(token_address),       # Address analysis
                 return_exceptions=True
             )
             
-            dextools_result, dexscreener_result, rpc_result, pattern_result = results
+            dexscreener_result, solscan_result, jupiter_result, rpc_result, pattern_result = results
             
-            # Initialize scoring
+            # Initialize scoring with optimized weights
             weighted_score = 0
             total_weight = 0
             analysis_report = {
@@ -52,41 +53,53 @@ class FraudDetector:
                 'checks': {}
             }
             
-            # Process DexTools results (40% weight) - PREMIUM API
-            if isinstance(dextools_result, dict) and not isinstance(dextools_result, Exception):
-                analysis_report['checks']['dextools'] = dextools_result
-                score = dextools_result.get('score', 0.40)
-                weighted_score += score * 0.40
-                total_weight += 0.40
-            else:
-                logger.warning(f"DexTools error: {dextools_result}")
-                analysis_report['checks']['dextools'] = {'error': str(dextools_result), 'score': 0.40}
-                weighted_score += 0.40 * 0.40
-                total_weight += 0.40
-            
-            # Process DexScreener results (30% weight)
+            # Process DexScreener results (35% weight) - PRIMARY
             if isinstance(dexscreener_result, dict) and not isinstance(dexscreener_result, Exception):
                 analysis_report['checks']['dexscreener'] = dexscreener_result
                 score = dexscreener_result.get('score', 0.25)
-                weighted_score += score * 0.30
-                total_weight += 0.30
+                weighted_score += score * 0.35
+                total_weight += 0.35
             else:
                 logger.warning(f"DexScreener error: {dexscreener_result}")
                 analysis_report['checks']['dexscreener'] = {'error': str(dexscreener_result), 'score': 0.25}
-                weighted_score += 0.25 * 0.30
-                total_weight += 0.30
+                weighted_score += 0.25 * 0.35
+                total_weight += 0.35
             
-            # Process RPC analysis results (20% weight)
+            # Process Solscan results (25% weight) - NEW
+            if isinstance(solscan_result, dict) and not isinstance(solscan_result, Exception):
+                analysis_report['checks']['solscan'] = solscan_result
+                score = solscan_result.get('score', 0.40)
+                weighted_score += score * 0.25
+                total_weight += 0.25
+            else:
+                logger.warning(f"Solscan error: {solscan_result}")
+                analysis_report['checks']['solscan'] = {'error': str(solscan_result), 'score': 0.40}
+                weighted_score += 0.40 * 0.25
+                total_weight += 0.25
+            
+            # Process Jupiter results (15% weight) - NEW
+            if isinstance(jupiter_result, dict) and not isinstance(jupiter_result, Exception):
+                analysis_report['checks']['jupiter'] = jupiter_result
+                score = jupiter_result.get('score', 0.50)
+                weighted_score += score * 0.15
+                total_weight += 0.15
+            else:
+                logger.warning(f"Jupiter error: {jupiter_result}")
+                analysis_report['checks']['jupiter'] = {'error': str(jupiter_result), 'score': 0.50}
+                weighted_score += 0.50 * 0.15
+                total_weight += 0.15
+            
+            # Process RPC analysis results (15% weight)
             if isinstance(rpc_result, dict) and not isinstance(rpc_result, Exception):
                 analysis_report['checks']['rpc_analysis'] = rpc_result
                 score = rpc_result.get('score', 0.40)
-                weighted_score += score * 0.20
-                total_weight += 0.20
+                weighted_score += score * 0.15
+                total_weight += 0.15
             else:
                 logger.warning(f"RPC analysis error: {rpc_result}")
                 analysis_report['checks']['rpc_analysis'] = {'error': str(rpc_result), 'score': 0.40}
-                weighted_score += 0.40 * 0.20
-                total_weight += 0.20
+                weighted_score += 0.40 * 0.15
+                total_weight += 0.15
             
             # Process Pattern analysis results (10% weight)
             if isinstance(pattern_result, dict) and not isinstance(pattern_result, Exception):
@@ -125,191 +138,6 @@ class FraudDetector:
         except Exception as e:
             logger.error(f"Error analyzing token safety for {token_address}: {e}")
             return False, {'error': str(e), 'is_safe': False}
-    
-    async def dextools_analysis(self, token_address: str) -> Dict:
-        """DexTools Premium API analysis with Bearer token authentication"""
-        try:
-            if not self.config.DEXTOOLS_API_KEY:
-                return {
-                    'service': 'dextools',
-                    'is_safe': False,
-                    'score': 0.40,
-                    'error': 'DexTools API key not configured',
-                    'message': 'API key required'
-                }
-            
-            # CORRECTED: Bearer token authentication for long alphanumeric keys
-            headers = {
-                'Authorization': f'Bearer {self.config.DEXTOOLS_API_KEY}',
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            
-            # Get token info and score
-            token_url = f"{self.config.DEXTOOLS_API_BASE}/token/solana/{token_address}"
-            score_url = f"{self.config.DEXTOOLS_API_BASE}/token/solana/{token_address}/score"
-            
-            logger.info(f"🔑 Using Bearer token authentication for DexTools")
-            
-            # Try token info first
-            async with self.session.get(token_url, headers=headers, timeout=15) as response:
-                logger.info(f"📡 DexTools response status: {response.status}")
-                
-                if response.status == 200:
-                    token_data = await response.json()
-                    
-                    # Extract data
-                    data = token_data.get('data', {})
-                    
-                    # Market metrics
-                    market_cap = data.get('mcap', 0)
-                    liquidity = data.get('liquidity', 0)
-                    volume_24h = data.get('volume24h', 0)
-                    price_variation = data.get('variation24h', 0)
-                    
-                    # Try to get DexTools score
-                    dextools_score = 50  # Default
-                    try:
-                        async with self.session.get(score_url, headers=headers, timeout=10) as score_response:
-                            if score_response.status == 200:
-                                score_data = await score_response.json()
-                                dextools_score = score_data.get('data', {}).get('dextScore', 50)
-                    except:
-                        pass  # Use default score
-                    
-                    # Calculate our score based on multiple factors
-                    our_score = 0.30  # Base score
-                    
-                    # DexTools score component (0-40%)
-                    if dextools_score >= 90:
-                        our_score += 0.40
-                    elif dextools_score >= 80:
-                        our_score += 0.35
-                    elif dextools_score >= 70:
-                        our_score += 0.30
-                    elif dextools_score >= 60:
-                        our_score += 0.25
-                    elif dextools_score >= 50:
-                        our_score += 0.20
-                    else:
-                        our_score += 0.10
-                    
-                    # Liquidity component (0-20%)
-                    if liquidity >= self.config.MIN_LIQUIDITY_USD * 10:  # 10x minimum
-                        our_score += 0.20
-                    elif liquidity >= self.config.MIN_LIQUIDITY_USD * 3:  # 3x minimum
-                        our_score += 0.15
-                    elif liquidity >= self.config.MIN_LIQUIDITY_USD:
-                        our_score += 0.10
-                    else:
-                        our_score += 0.05
-                    
-                    # Volume component (0-15%)
-                    if volume_24h >= self.config.MIN_VOLUME_24H * 20:  # 20x minimum
-                        our_score += 0.15
-                    elif volume_24h >= self.config.MIN_VOLUME_24H * 5:  # 5x minimum
-                        our_score += 0.12
-                    elif volume_24h >= self.config.MIN_VOLUME_24H:
-                        our_score += 0.08
-                    else:
-                        our_score += 0.03
-                    
-                    # Volatility check (penalty for extreme volatility)
-                    if abs(price_variation) > 500:  # More than 500% change
-                        our_score -= 0.10
-                    elif abs(price_variation) > 200:  # More than 200% change
-                        our_score -= 0.05
-                    
-                    # Ensure score bounds
-                    our_score = max(0.10, min(1.0, our_score))
-                    
-                    is_safe = our_score >= 0.65
-                    
-                    # Create comprehensive message
-                    message = f"DT:{dextools_score}/100, Liq:${liquidity:,.0f}, Vol:${volume_24h:,.0f}"
-                    if abs(price_variation) > 100:
-                        message += f", Var:{price_variation:+.1f}%"
-                    
-                    logger.info(f"✅ DexTools Bearer auth successful: {message}")
-                    
-                    return {
-                        'service': 'dextools',
-                        'is_safe': is_safe,
-                        'score': our_score,
-                        'dextools_score': dextools_score,
-                        'market_cap': market_cap,
-                        'liquidity': liquidity,
-                        'volume_24h': volume_24h,
-                        'price_variation_24h': price_variation,
-                        'message': message
-                    }
-                
-                elif response.status == 401:
-                    logger.error("❌ DexTools 401: Invalid Bearer token")
-                    return {
-                        'service': 'dextools',
-                        'is_safe': False,
-                        'score': 0.40,
-                        'error': 'Invalid Bearer token',
-                        'message': 'Bearer token authentication failed'
-                    }
-                elif response.status == 403:
-                    logger.error("❌ DexTools 403: Access forbidden - check subscription")
-                    return {
-                        'service': 'dextools',
-                        'is_safe': False,
-                        'score': 0.40,
-                        'error': 'Access forbidden - subscription issue',
-                        'message': 'Check DexTools subscription status'
-                    }
-                elif response.status == 404:
-                    logger.warning("⚠️ DexTools 404: Token not found")
-                    return {
-                        'service': 'dextools',
-                        'is_safe': False,
-                        'score': 0.30,
-                        'error': 'Token not found in DexTools',
-                        'message': 'Token too new or not tracked'
-                    }
-                elif response.status == 429:
-                    logger.warning("⚠️ DexTools 429: Rate limited")
-                    return {
-                        'service': 'dextools',
-                        'is_safe': False,
-                        'score': 0.35,
-                        'error': 'Rate limited',
-                        'message': 'DexTools rate limit exceeded'
-                    }
-                else:
-                    error_text = await response.text()
-                    logger.error(f"❌ DexTools {response.status}: {error_text}")
-                    return {
-                        'service': 'dextools',
-                        'is_safe': False,
-                        'score': 0.35,
-                        'error': f'API returned status {response.status}',
-                        'message': f'DexTools API error: {response.status}'
-                    }
-                    
-        except asyncio.TimeoutError:
-            logger.warning("⚠️ DexTools timeout")
-            return {
-                'service': 'dextools',
-                'is_safe': False,
-                'score': 0.35,
-                'error': 'Request timeout',
-                'message': 'DexTools API timeout'
-            }
-        except Exception as e:
-            logger.error(f"❌ DexTools error: {e}")
-            return {
-                'service': 'dextools',
-                'is_safe': False,
-                'score': 0.35,
-                'error': str(e),
-                'message': f'DexTools error: {str(e)[:50]}'
-            }
     
     async def dexscreener_analysis(self, token_address: str) -> Dict:
         """DexScreener API analysis - FREE and RELIABLE"""
@@ -409,6 +237,205 @@ class FraudDetector:
                 'score': 0.15,
                 'error': str(e),
                 'message': f'DexScreener error: {str(e)[:50]}'
+            }
+    
+    async def solscan_analysis(self, token_address: str) -> Dict:
+        """Solscan API analysis - FREE Solana-specific data"""
+        try:
+            url = f"https://public-api.solscan.io/token/meta?tokenAddress={token_address}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            
+            async with self.session.get(url, headers=headers, timeout=15) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Extract token metadata
+                    symbol = data.get('symbol', '')
+                    name = data.get('name', '')
+                    decimals = data.get('decimals', 0)
+                    supply = float(data.get('supply', 0))
+                    
+                    # Calculate score based on metadata quality
+                    score = 0.30  # Base score
+                    
+                    # Symbol quality (0-20%)
+                    if symbol and len(symbol) <= 10 and symbol.replace('$', '').isalnum():
+                        score += 0.20
+                    elif symbol and len(symbol) <= 15:
+                        score += 0.15
+                    elif symbol:
+                        score += 0.10
+                    
+                    # Name quality (0-15%)
+                    if name and len(name) <= 50 and len(name) >= 3:
+                        score += 0.15
+                    elif name:
+                        score += 0.10
+                    
+                    # Decimals standard (0-10%)
+                    if decimals in [6, 8, 9]:  # Standard token decimals
+                        score += 0.10
+                    elif decimals > 0:
+                        score += 0.05
+                    
+                    # Supply analysis (0-15%)
+                    if supply > 0:
+                        if 1000 <= supply <= 1_000_000_000:  # Reasonable supply
+                            score += 0.15
+                        elif supply <= 10_000_000_000:  # High but acceptable
+                            score += 0.10
+                        else:
+                            score += 0.05
+                    
+                    is_safe = score >= 0.60
+                    
+                    message = f"Symbol: {symbol}, Decimals: {decimals}, Supply: {supply:,.0f}"
+                    
+                    return {
+                        'service': 'solscan',
+                        'is_safe': is_safe,
+                        'score': score,
+                        'symbol': symbol,
+                        'name': name,
+                        'decimals': decimals,
+                        'supply': supply,
+                        'message': message
+                    }
+                    
+                elif response.status == 404:
+                    return {
+                        'service': 'solscan',
+                        'is_safe': False,
+                        'score': 0.25,
+                        'error': 'Token not found',
+                        'message': 'Token not in Solscan database'
+                    }
+                else:
+                    return {
+                        'service': 'solscan',
+                        'is_safe': False,
+                        'score': 0.30,
+                        'error': f'API returned status {response.status}',
+                        'message': f'Solscan API error: {response.status}'
+                    }
+                    
+        except asyncio.TimeoutError:
+            return {
+                'service': 'solscan',
+                'is_safe': False,
+                'score': 0.30,
+                'error': 'Request timeout',
+                'message': 'Solscan timeout'
+            }
+        except Exception as e:
+            return {
+                'service': 'solscan',
+                'is_safe': False,
+                'score': 0.30,
+                'error': str(e),
+                'message': f'Solscan error: {str(e)[:50]}'
+            }
+    
+    async def jupiter_liquidity_check(self, token_address: str) -> Dict:
+        """Jupiter API liquidity check - Using your existing Jupiter integration"""
+        try:
+            # Try to get a quote to see if Jupiter can trade this token
+            quote_url = "https://quote-api.jup.ag/v6/quote"
+            params = {
+                "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+                "outputMint": token_address,
+                "amount": 1000000,  # $1 USDC
+                "slippageBps": 300,  # 3% slippage
+                "onlyDirectRoutes": "false"
+            }
+            
+            async with self.session.get(quote_url, params=params, timeout=10) as response:
+                if response.status == 200:
+                    quote_data = await response.json()
+                    
+                    if quote_data and 'outAmount' in quote_data:
+                        out_amount = int(quote_data.get('outAmount', 0))
+                        price_impact = float(quote_data.get('priceImpactPct', 0))
+                        
+                        # Calculate score based on tradability
+                        score = 0.40  # Base score for being tradable
+                        
+                        # Price impact analysis (0-30%)
+                        if price_impact < 1:  # Less than 1% impact
+                            score += 0.30
+                        elif price_impact < 3:  # Less than 3% impact
+                            score += 0.20
+                        elif price_impact < 10:  # Less than 10% impact
+                            score += 0.10
+                        else:
+                            score += 0.05
+                        
+                        # Route quality (0-20%)
+                        route_plan = quote_data.get('routePlan', [])
+                        if len(route_plan) == 1:  # Direct route
+                            score += 0.20
+                        elif len(route_plan) <= 3:  # Short route
+                            score += 0.15
+                        else:
+                            score += 0.10
+                        
+                        is_safe = score >= 0.60 and price_impact < 15
+                        
+                        message = f"Tradable via Jupiter, Impact: {price_impact:.2f}%, Routes: {len(route_plan)}"
+                        
+                        return {
+                            'service': 'jupiter',
+                            'is_safe': is_safe,
+                            'score': score,
+                            'price_impact': price_impact,
+                            'route_count': len(route_plan),
+                            'tradable': True,
+                            'message': message
+                        }
+                    else:
+                        return {
+                            'service': 'jupiter',
+                            'is_safe': False,
+                            'score': 0.20,
+                            'error': 'Invalid quote response',
+                            'message': 'Jupiter quote failed'
+                        }
+                        
+                elif response.status == 400:
+                    return {
+                        'service': 'jupiter',
+                        'is_safe': False,
+                        'score': 0.10,
+                        'error': 'Token not tradable on Jupiter',
+                        'message': 'Not supported by Jupiter'
+                    }
+                else:
+                    return {
+                        'service': 'jupiter',
+                        'is_safe': False,
+                        'score': 0.25,
+                        'error': f'Jupiter API error: {response.status}',
+                        'message': f'Jupiter error: {response.status}'
+                    }
+                    
+        except asyncio.TimeoutError:
+            return {
+                'service': 'jupiter',
+                'is_safe': False,
+                'score': 0.25,
+                'error': 'Request timeout',
+                'message': 'Jupiter timeout'
+            }
+        except Exception as e:
+            return {
+                'service': 'jupiter',
+                'is_safe': False,
+                'score': 0.25,
+                'error': str(e),
+                'message': f'Jupiter error: {str(e)[:50]}'
             }
     
     async def rpc_analysis(self, token_address: str) -> Dict:
@@ -573,4 +600,3 @@ class FraudDetector:
                 'error': str(e),
                 'message': f'Pattern analysis error: {str(e)[:50]}'
             }
-    

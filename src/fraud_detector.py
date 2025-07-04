@@ -167,7 +167,7 @@ class FraudDetector:
     async def rugcheck_analysis(self, token_address: str) -> Dict:
         """RugCheck.xyz API analysis - FREE and RELIABLE (Replaces QuillAI)"""
         try:
-            url = f"https://rugcheck.xyz/api/tokens/{token_address}"
+            url = f"https://api.rugcheck.xyz/tokens/{token_address}"
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json'

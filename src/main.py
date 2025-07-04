@@ -232,17 +232,31 @@ class SolanaTradingBot:
         try:
             # REAL BLOCKCHAIN TRANSACTION
             logger.warning("⚠️ SENDING REAL TRANSACTION WITH REAL MONEY")
-            
-            # Decode the transaction
+        
+            # Add proper transaction signing here
+            from solana.rpc.async_api import AsyncClient
+            from solana.transaction import Transaction
+            from solders.keypair import Keypair
+            import base64
+        
+            # Decode transaction
             transaction_bytes = base64.b64decode(transaction_data)
-            
-            # For now, return a simulated transaction ID with warning
-            logger.error("⚠️ REAL TRANSACTION SIGNING NOT IMPLEMENTED FOR SAFETY")
-            logger.error("⚠️ Add Solana transaction signing code here")
-            logger.error("⚠️ This prevents accidental money loss during development")
-            
-            # Return simulation until you implement real signing
-            return f"real_sim_{int(time.time())}"
+            transaction = Transaction.deserialize(transaction_bytes)
+        
+            # Sign with your private key
+            keypair = Keypair.from_base58_string(self.private_key)
+            transaction.sign(keypair)
+        
+            # Send to blockchain
+            client = AsyncClient(self.rpc_url)
+            result = await client.send_transaction(transaction)
+        
+            if result.value:
+                logger.info(f"✅ REAL TRANSACTION SENT: {result.value}")
+                return str(result.value)
+            else:
+                logger.error("❌ Transaction failed")
+                return None
             
         except Exception as e:
             logger.error(f"❌ Error sending real transaction: {e}")

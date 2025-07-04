@@ -703,7 +703,7 @@ class SolanaTradingBot:
                         await self.sell_position(token_address, position, current_value)
                     
                     # Check for stop loss (optional)
-                    elif profit_percent <= -15:  # 8% stop loss
+                    elif profit_percent <= -10:  # 10% stop loss
                         logger.warning(f"⚠️ Stop loss triggered for {token_address[:8]}")
                         await self.sell_position(token_address, position, current_value)
                         

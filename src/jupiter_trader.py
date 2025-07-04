@@ -1,4 +1,5 @@
-import asyncio
+# In your fraud_detector.py, add this comment at the top:
+# Updated: 2025-07-04 - Removed QuillAI completelyimport asyncio
 import logging
 import base64
 import json

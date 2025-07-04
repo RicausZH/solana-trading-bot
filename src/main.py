@@ -3,8 +3,8 @@
 Solana Trading Bot - REAL TRADING VERSION
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet
 Uses direct Jupiter API calls + Real blockchain transactions
-Includes: Real Token Discovery, Fraud Detection, REAL Trading, Profit Taking
-Updated: 2025-07-04 - DexTools integration, removed broken APIs
+Includes: Real Token Discovery, Advanced Fraud Detection, REAL Trading, Profit Taking
+Updated: 2025-07-04 - Working Free APIs, Removed broken premium APIs
 """
 
 import os
@@ -59,23 +59,25 @@ class SolanaTradingBot:
         self.profitable_trades = 0
         self.total_profit = 0.0
         
-        # API endpoints (DexTools integration)
+        # API endpoints
         self.jupiter_quote_url = "https://quote-api.jup.ag/v6/quote"
         self.jupiter_swap_url = "https://quote-api.jup.ag/v6/swap"
-        self.dextools_api_key = os.getenv("DEXTOOLS_API_KEY", "")
-        self.dextools_base_url = "https://public-api.dextools.io/standard/v2"
+        
+        # Security Analysis APIs (Free and Working)
         self.dexscreener_url = os.getenv("DEXSCREENER_API", "https://api.dexscreener.com/latest/dex/tokens")
         
         # Safety thresholds
-        self.safety_threshold = float(os.getenv("SAFETY_THRESHOLD", "0.60"))
+        self.safety_threshold = float(os.getenv("SAFETY_THRESHOLD", "0.55"))
         self.min_liquidity_usd = float(os.getenv("MIN_LIQUIDITY_USD", "1500"))
         self.min_volume_24h = float(os.getenv("MIN_VOLUME_24H", "300"))
         
-        logger.info("🤖 Solana Trading Bot initialized with DexTools")
+        logger.info("🤖 Solana Trading Bot initialized with Free APIs")
         logger.info(f"💰 Trade Amount: ${self.trade_amount/1_000_000}")
         logger.info(f"🎯 Profit Target: {self.profit_target}%")
         logger.info(f"📊 Max Positions: {self.max_positions}")
         logger.info(f"🔒 Safety Threshold: {self.safety_threshold}")
+        logger.info(f"💧 Min Liquidity: ${self.min_liquidity_usd:,.0f}")
+        logger.info(f"📈 Min Volume 24h: ${self.min_volume_24h:,.0f}")
         
         # CRITICAL WARNING
         if self.enable_real_trading:
@@ -92,8 +94,6 @@ class SolanaTradingBot:
         if not self.public_key:
             logger.error("❌ SOLANA_PUBLIC_KEY not set") 
             return False
-        if not self.dextools_api_key:
-            logger.warning("⚠️ DEXTOOLS_API_KEY not set - DexTools analysis will be limited")
             
         if self.enable_real_trading:
             logger.warning("⚠️ REAL TRADING MODE - Checking wallet balance...")
@@ -138,6 +138,7 @@ class SolanaTradingBot:
         try:
             # This would normally use Solana RPC to check token balance
             # For now, return a simulated balance
+            # In real implementation, you'd call the RPC
             return 150.0  # Simulated USDC balance
         except:
             return 0.0
@@ -248,7 +249,7 @@ class SolanaTradingBot:
             return None
     
     async def check_token_safety(self, token_address: str) -> Tuple[bool, float]:
-        """Check if token is safe using DexTools + reliable APIs"""
+        """Check if token is safe using reliable free APIs"""
         try:
             # Skip SOL for now - focus on new tokens
             if token_address == self.sol_mint:
@@ -257,46 +258,134 @@ class SolanaTradingBot:
             
             logger.info(f"🔍 Analyzing token safety: {token_address}")
             
-            # Use fraud detector with DexTools integration
-            from fraud_detector import FraudDetector
-            from config import Config
+            # Import and use fraud detector
+            try:
+                from src.fraud_detector import FraudDetector
+                from src.config import Config
+                
+                config = Config()
+                async with FraudDetector(config) as detector:
+                    is_safe, analysis_report = await detector.analyze_token_safety(token_address)
+                    confidence = analysis_report.get('safety_score', 0.0)
+                    
+                    return is_safe, confidence
+            except ImportError:
+                # Fallback if fraud_detector import fails
+                logger.warning("⚠️ Fraud detector import failed, using simplified analysis")
+                return await self.simplified_safety_check(token_address)
             
-            config = Config()
-            async with FraudDetector(config) as detector:
-                is_safe, analysis_report = await detector.analyze_token_safety(token_address)
-                confidence = analysis_report.get('safety_score', 0.0)
-                
-                return is_safe, confidence
-                
         except Exception as e:
             logger.error(f"❌ Error in safety analysis: {e}")
             return False, 0.0
+    
+    async def simplified_safety_check(self, token_address: str) -> Tuple[bool, float]:
+        """Simplified safety check using only DexScreener"""
+        try:
+            # Run DexScreener analysis
+            dexscreener_score = await self.dexscreener_analysis(token_address)
+            pattern_score = await self.pattern_analysis(token_address)
+            
+            # Calculate weighted score
+            final_score = (dexscreener_score * 0.70) + (pattern_score * 0.30)
+            is_safe = final_score >= self.safety_threshold
+            
+            logger.info(f"🔒 SIMPLIFIED SAFETY REPORT for {token_address[:8]}:")
+            logger.info(f"   DexScreener: {dexscreener_score:.2f}")
+            logger.info(f"   Pattern:     {pattern_score:.2f}")
+            logger.info(f"   FINAL:       {final_score:.2f} ({'✓ SAFE' if is_safe else '⚠️ RISKY'})")
+            
+            return is_safe, final_score
+            
+        except Exception as e:
+            logger.error(f"❌ Error in simplified safety check: {e}")
+            return False, 0.0
+    
+    async def dexscreener_analysis(self, token_address: str) -> float:
+        """DexScreener API analysis"""
+        try:
+            url = f"{self.dexscreener_url}/{token_address}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=15) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        pairs = data.get('pairs', [])
+                        
+                        if pairs:
+                            # Get best pair
+                            pair = max(pairs, key=lambda p: float(p.get('liquidity', {}).get('usd', 0)))
+                            
+                            liquidity_usd = float(pair.get('liquidity', {}).get('usd', 0))
+                            volume_24h = float(pair.get('volume', {}).get('h24', 0))
+                            
+                            score = 0.20
+                            
+                            if liquidity_usd >= self.min_liquidity_usd * 3:
+                                score += 0.35
+                            elif liquidity_usd >= self.min_liquidity_usd:
+                                score += 0.25
+                            
+                            if volume_24h >= self.min_volume_24h * 5:
+                                score += 0.35
+                            elif volume_24h >= self.min_volume_24h:
+                                score += 0.25
+                            
+                            logger.info(f"📊 DexScreener: Liq=${liquidity_usd:,.0f}, Vol=${volume_24h:,.0f}")
+                            return min(score, 1.0)
+                        else:
+                            logger.warning("⚠️ No trading pairs found on DexScreener")
+                            return 0.15
+                    else:
+                        logger.warning(f"⚠️ DexScreener API error: {response.status}")
+                        return 0.20
+                        
+        except Exception as e:
+            logger.warning(f"⚠️ DexScreener analysis error: {e}")
+            return 0.20
+    
+    async def pattern_analysis(self, token_address: str) -> float:
+        """Basic pattern analysis"""
+        try:
+            score = 0.40  # Base score
+            
+            # Check address length
+            if len(token_address) == 44:
+                score += 0.20
+            
+            # Check character variety
+            unique_chars = len(set(token_address))
+            if unique_chars >= 20:
+                score += 0.30
+            elif unique_chars >= 15:
+                score += 0.20
+            
+            # Check for suspicious patterns
+            suspicious_patterns = ['1111', '0000', 'pump', 'scam']
+            if not any(pattern in token_address.lower() for pattern in suspicious_patterns):
+                score += 0.10
+            
+            return min(score, 1.0)
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Pattern analysis error: {e}")
+            return 0.50
     
     async def discover_new_tokens(self) -> List[str]:
         """Discover new tokens from various FREE sources"""
         try:
             new_tokens = []
             
-            # Method 1: QuickNode new pools (if available)
-            if self.quicknode_http:
-                tokens = await self._quicknode_discovery()
-                new_tokens.extend(tokens)
-            
-            # Method 2: DexScreener trending/new tokens (FREE)
-            dexscreener_tokens = await self._dexscreener_discovery()
+            # Method 1: DexScreener trending/new tokens (FREE)
+            dexscreener_tokens = await self.dexscreener_discovery()
             new_tokens.extend(dexscreener_tokens)
             
-            # Method 3: Solscan new tokens (FREE)
-            solscan_tokens = await self._solscan_discovery()
-            new_tokens.extend(solscan_tokens)
-            
-            # Method 4: Raydium public API (FREE)
-            raydium_tokens = await self._raydium_discovery()
+            # Method 2: Raydium public API (FREE)
+            raydium_tokens = await self.raydium_discovery()
             new_tokens.extend(raydium_tokens)
             
             # Remove duplicates and filter out stablecoins/known tokens
             unique_tokens = list(set(new_tokens))
-            filtered_tokens = self._filter_tokens(unique_tokens)
+            filtered_tokens = self.filter_tokens(unique_tokens)
             
             logger.info(f"🔍 Discovered {len(filtered_tokens)} potential NEW tokens")
             return filtered_tokens[:10]  # Limit to top 10 newest
@@ -304,12 +393,12 @@ class SolanaTradingBot:
         except Exception as e:
             logger.error(f"❌ Error discovering tokens: {e}")
             return []
-
-    async def _dexscreener_discovery(self) -> List[str]:
+    
+    async def dexscreener_discovery(self) -> List[str]:
         """Discover new tokens using DexScreener API (FREE)"""
         try:
             # DexScreener latest tokens on Solana
-            url = "https://api.dexscreener.com/latest/dex/tokens/solana"
+            url = "https://api.dexscreener.com/latest/dex/search/?q=solana"
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=15) as response:
@@ -327,68 +416,19 @@ class SolanaTradingBot:
                             
                             # Only take tokens paired with SOL or USDC
                             if quote_address in [self.sol_mint, self.usdc_mint] and base_address:
-                                # Check if it's a new token (created recently)
-                                created_at = pair.get("pairCreatedAt")
-                                if created_at:
-                                    # Only tokens created in last 24 hours
-                                    created_time = dt.fromtimestamp(created_at / 1000)
-                                    now = dt.now()
-                                    hours_old = (now - created_time).total_seconds() / 3600
-                                    
-                                    if hours_old < 24:  # Less than 24 hours old
-                                        tokens.append(base_address)
-                                        logger.info(f"📍 Found new token: {base_address[:8]} (age: {hours_old:.1f}h)")
+                                tokens.append(base_address)
+                                logger.info(f"📍 Found token: {base_address[:8]}")
                         
-                        return tokens
+                        return tokens[:15]  # Return top 15
                     else:
-                        logger.warning(f"DexScreener API error: {response.status}")
+                        logger.warning(f"DexScreener discovery API error: {response.status}")
                         return []
                         
         except Exception as e:
             logger.error(f"DexScreener discovery error: {e}")
             return []
-
-    async def _solscan_discovery(self) -> List[str]:
-        """Discover new tokens using Solscan API (FREE)"""
-        try:
-            # Solscan new token transfers
-            url = "https://public-api.solscan.io/token/list"
-            params = {
-                "sortBy": "created_time",
-                "direction": "desc",
-                "limit": 50
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=15) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        tokens = []
-                        
-                        for token in data.get("data", [])[:20]:
-                            token_address = token.get("tokenAddress")
-                            created_time = token.get("createdTime")
-                            
-                            if token_address and created_time:
-                                # Check if created in last 6 hours
-                                created = dt.fromtimestamp(created_time)
-                                now = dt.now()
-                                hours_old = (now - created).total_seconds() / 3600
-                                
-                                if hours_old < 6:  # Very fresh tokens
-                                    tokens.append(token_address)
-                                    logger.info(f"📍 Solscan new token: {token_address[:8]} (age: {hours_old:.1f}h)")
-                        
-                        return tokens
-                    else:
-                        logger.warning(f"Solscan API error: {response.status}")
-                        return []
-                        
-        except Exception as e:
-            logger.error(f"Solscan discovery error: {e}")
-            return []
-
-    async def _raydium_discovery(self) -> List[str]:
+    
+    async def raydium_discovery(self) -> List[str]:
         """Discover new tokens using Raydium public API (FREE)"""
         try:
             # Raydium V3 pools API
@@ -397,7 +437,7 @@ class SolanaTradingBot:
                 "poolType": "all",
                 "poolSortField": "default",
                 "sortType": "desc",
-                "pageSize": 50,
+                "pageSize": 30,
                 "page": 1
             }
             
@@ -410,7 +450,7 @@ class SolanaTradingBot:
                         if data.get("success") and data.get("data"):
                             pools = data["data"]["data"]
                             
-                            for pool in pools[:20]:  # Latest 20 pools
+                            for pool in pools[:15]:  # Latest 15 pools
                                 # Get mint A and mint B
                                 mint_a = pool.get("mintA", {}).get("address")
                                 mint_b = pool.get("mintB", {}).get("address")
@@ -434,33 +474,8 @@ class SolanaTradingBot:
         except Exception as e:
             logger.error(f"Raydium discovery error: {e}")
             return []
-
-    async def _quicknode_discovery(self) -> List[str]:
-        """Discover tokens using QuickNode (if available)"""
-        try:
-            if not self.quicknode_http:
-                return []
-                
-            url = f"{self.quicknode_http}/new-pools"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=15) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        tokens = []
-                        for pool in data.get("data", [])[:15]:  # Top 15 newest
-                            token_addr = pool.get("tokenAddress")
-                            if token_addr and token_addr not in [self.usdc_mint, self.sol_mint]:
-                                tokens.append(token_addr)
-                                logger.info(f"📍 QuickNode new token: {token_addr[:8]}")
-                        return tokens
-                    else:
-                        logger.warning(f"QuickNode API error: {response.status}")
-                        return []
-        except Exception as e:
-            logger.error(f"QuickNode discovery error: {e}")
-            return []
-
-    def _filter_tokens(self, tokens: List[str]) -> List[str]:
+    
+    def filter_tokens(self, tokens: List[str]) -> List[str]:
         """Filter out known stablecoins and system tokens"""
         # Known tokens to skip (stablecoins, wrapped tokens, etc.)
         skip_tokens = {
@@ -475,7 +490,7 @@ class SolanaTradingBot:
         
         filtered = []
         for token in tokens:
-            if token not in skip_tokens and len(token) == 44:  # Valid Solana address length
+            if token and token not in skip_tokens and len(token) == 44:  # Valid Solana address length
                 filtered.append(token)
         
         logger.info(f"🔧 Filtered {len(tokens)} → {len(filtered)} tokens (removed known/stable tokens)")
@@ -504,7 +519,7 @@ class SolanaTradingBot:
                         await self.sell_position(token_address, position, current_value)
                     
                     # Check for stop loss (optional)
-                    elif profit_percent <= -10:  # 10% stop loss
+                    elif profit_percent <= -15:  # 15% stop loss
                         logger.warning(f"⚠️ Stop loss triggered for {token_address[:8]}")
                         await self.sell_position(token_address, position, current_value)
                         
@@ -628,7 +643,7 @@ class SolanaTradingBot:
                             logger.info(f"⚠️ Risky token skipped: {token_address[:8]} (confidence: {confidence:.2f})")
                 
                 # Wait before next iteration
-                await asyncio.sleep(60)  # 60 second intervals for real token discovery
+                await asyncio.sleep(60)  # 60 second intervals
                 
             except KeyboardInterrupt:
                 logger.info("🛑 Bot stopped by user")
@@ -639,7 +654,7 @@ class SolanaTradingBot:
     
     async def run(self):
         """Start the trading bot"""
-        logger.info("🚀 Starting Solana Trading Bot with DexTools...")
+        logger.info("🚀 Starting Solana Trading Bot...")
         
         if self.enable_real_trading:
             logger.warning("⚠️⚠️⚠️ REAL TRADING MODE ENABLED ⚠️⚠️⚠️")

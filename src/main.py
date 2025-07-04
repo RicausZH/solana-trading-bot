@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3sd
 """
 Solana Trading Bot - COMPLETE VERSION WITH ALL ENVIRONMENT VARIABLES
 ⚠️ WARNING: This version uses REAL MONEY on Solana mainnet when enabled

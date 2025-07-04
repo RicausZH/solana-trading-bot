@@ -27,6 +27,17 @@ class Config:
     JUPITER_QUOTE_API = os.getenv('JUPITER_QUOTE_API', 'https://quote-api.jup.ag/v6/quote')
     JUPITER_SWAP_API = os.getenv('JUPITER_SWAP_API', 'https://quote-api.jup.ag/v6/swap')
     
-    # Free Fraud Detection APIs
-    QUILLCHECK_API = os.getenv('QUILLCHECK_API', 'https://check.quillai.network/api/v1')
-    GOPLUS_API = os.getenv('GOPLUS_API', 'https://api.gopluslabs.io/')
+    # Security Analysis APIs (Alternatives to QuillAI)
+    RUGCHECK_API = os.getenv('RUGCHECK_API', 'https://api.rugcheck.xyz/v1/tokens/sol')
+    DEXSCREENER_API = os.getenv('DEXSCREENER_API', 'https://api.dexscreener.com/latest/dex/tokens')
+    BIRDEYE_API = os.getenv('BIRDEYE_API', 'https://public-api.birdeye.so/defi/token_security')
+    GOPLUS_API = os.getenv('GOPLUS_API', 'https://api.gopluslabs.io')
+    
+    # Optional API Keys (for higher limits)
+    BIRDEYE_API_KEY = os.getenv('BIRDEYE_API_KEY', '')
+    RUGCHECK_API_KEY = os.getenv('RUGCHECK_API_KEY', '')
+    
+    # Safety Thresholds
+    SAFETY_THRESHOLD = float(os.getenv('SAFETY_THRESHOLD', '0.65'))
+    MIN_LIQUIDITY_USD = float(os.getenv('MIN_LIQUIDITY_USD', '5000'))
+    MIN_VOLUME_24H = float(os.getenv('MIN_VOLUME_24H', '1000'))
